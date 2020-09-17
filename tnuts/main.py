@@ -22,8 +22,8 @@ from tnuts.molconfig import get_energy_at
 from tnuts.mode import dicts_to_NModes
 from ape.sampling import SamplingJob
 
-sns.set_context('notebook')
-plt.style.use('seaborn-darkgrid')
+#sns.set_context('notebook')
+#plt.style.use('seaborn-darkgrid')
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
 def run_loglike(samp_obj,T):
