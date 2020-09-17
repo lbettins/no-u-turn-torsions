@@ -10,9 +10,6 @@ import warnings
 
 import pandas as pd
 #import seaborn as sns
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-mpl.use('MacOSX')
 
 import theano.tensor as tt
 from scipy.integrate import quad
@@ -73,6 +70,9 @@ def run_loglike(samp_obj,T,
                 '{}_trace.p'.format(samp_obj.label)),'wb'))
 
 def plot_MC_torsion_result(trace, NModes, T=300):
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl
+    mpl.use('MacOSX')
     beta = 1/(constants.kB*T)*constants.E_h
     n_d = len(NModes)
     logpriors = [mode.get_spline_fn() for mode in NModes]

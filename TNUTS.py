@@ -50,6 +50,7 @@ def main():
             imaginary_bonds.append([int(atom1), int(atom2)])
 
     label = input_file.split('.')[0]
+    print("Creating sampling object for input file")
     samp_object = SamplingJob(input_file=input_file, label=label, 
             ncpus=ncpus, output_directory=project_directory,
             protocol=protocol,
