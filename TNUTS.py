@@ -56,7 +56,7 @@ def main():
             protocol=protocol,
             level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
     run_loglike(samp_object, T, nsamples=1000, nchains=8,
-            nburn=200, ncpus=8)
+            nburn=200, ncpus=ncpus)
 
 if __name__ == '__main__':
     main()

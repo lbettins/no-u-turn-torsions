@@ -31,6 +31,7 @@ def run_loglike(samp_obj,T,
     """
     # Get the torsions from the APE object
     samp_obj.parse()
+    # With APE updates, should edit APE sampling.py to [only] sample torsions
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
     modes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
                 samp_obj=samp_obj)
