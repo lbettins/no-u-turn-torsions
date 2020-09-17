@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 import arviz as az
+import dill as pickle
 import numpy as np
 import pymc3 as pm
 import rmgpy.constants as constants
@@ -26,7 +28,8 @@ from ape.sampling import SamplingJob
 #plt.style.use('seaborn-darkgrid')
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
-def run_loglike(samp_obj,T):
+def run_loglike(samp_obj,T,
+        nsamples=1000, nburn=400, nchains=40, ncpus=4):
     """
     """
     # Get the torsions from the APE object
@@ -58,11 +61,16 @@ def run_loglike(samp_obj,T):
         E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
     with model:
         step = [pm.NUTS(x), pm.Metropolis(xi)]
-        trace = pm.sample(100, tune=400, step=step, chains=20, cores=4,
-               discard_tuned_samples=True)
+        trace = pm.sample(nsamples, tune=nburn, step=step, 
+                chains=nchains, cores=ncpus, discard_tuned_samples=True)
         #ppc = pm.sample_posterior_predictive(trace, var_names=['x','xi','E_obs'])
     plot_MC_torsion_result(trace,modes,T)
-    return trace
+    model_dict = {'model' : model, 'trace' : trace,\
+            'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
+            'tune' : nburn}
+    pickle.dump(model_dict,
+            open(os.path.join(samp_obj.output_directory,
+                '{}_trace.p'.format(samp_obj.label)),'wb'))
 
 def plot_MC_torsion_result(trace, NModes, T=300):
     beta = 1/(constants.kB*T)*constants.E_h
