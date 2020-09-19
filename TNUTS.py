@@ -4,10 +4,8 @@
 """
 Monte Carlo Simulations for Coupled Modes
 """
-
 import argparse
 import os
-import pickle
 from ape.sampling import SamplingJob
 from tnuts.main import run_loglike
 
@@ -20,24 +18,29 @@ def parse_command_line_arguments(command_line_args=None):
     parser.add_argument('-p', type=str, help='the sampling protocol (default: TNUTS)')
     parser.add_argument('-i', type=str, help='the imaginary bonds for QMMM calculation')
     parser.add_argument('-T', type=int, help='Temperature in Kelvin')
+    parser.add_argument('-ns', type=int, help='number of samples')
+    parser.add_argument('-nc', type=int, help='number of chains')
+    parser.add_argument('-nburn', type=int, help='number of tuning steps')
 
     args = parser.parse_args(command_line_args)
     args = parser.parse_args()
     args.file = args.file[0]
-
     return args
 
 def main():
     args = parse_command_line_arguments()
-    input_file = args.file
+    input_file = args.file.split('/')[-1]
     ncpus = args.n
     protocol = args.p
     T = args.T
-    project_directory = os.path.abspath(os.path.dirname(args.file))
+    nsamples = args.ns if args.ns is not None else 1000
+    nchains = args.nc if args.nc is not None else 5
+    nburn = args.nburn if args.nburn is not None else int(nsamples/5)
     if not protocol:
         protocol = 'TNUTS'
     if not T:
         T = 300
+    project_directory = os.path.abspath(os.path.dirname(args.file))
 
     # imaginary bonds for QMMM calculation
     # atom indices starts from 1
@@ -50,13 +53,17 @@ def main():
             imaginary_bonds.append([int(atom1), int(atom2)])
 
     label = input_file.split('.')[0]
-    print("Creating sampling object for input file")
-    samp_object = SamplingJob(input_file=input_file, label=label, 
+    print(label)
+    print(input_file)
+    print(project_directory)
+    samp_object = SamplingJob(
+            input_file=os.path.join(project_directory,input_file),
+            label=label, 
             ncpus=ncpus, output_directory=project_directory,
             protocol=protocol,
             level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
-    run_loglike(samp_object, T, nsamples=1000, nchains=8,
-            nburn=200, ncpus=ncpus)
+    run_loglike(samp_object, T, nsamples=nsamples, nchains=nchains,
+        tune=nburn, ncpus=ncpus)
 
 if __name__ == '__main__':
     main()

@@ -26,7 +26,7 @@ from ape.sampling import SamplingJob
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
 def run_loglike(samp_obj,T,
-        nsamples=1000, nburn=400, nchains=40, ncpus=4):
+        nsamples=1000, tune=200, nchains=10, ncpus=4):
     """
     """
     # Get the torsions from the APE object
@@ -47,25 +47,25 @@ def run_loglike(samp_obj,T,
     beta = 1/(constants.kB*T)*constants.E_h
     logpE = lambda E: -E    # E must be dimensionless
     logp = LogPrior(energy_array, T, sym_nums)
-    #energy_fn = Energy(get_energy, samp_obj)
+    energy_fn = Energy(get_energy_at, samp_obj)
     with pm.Model() as model:
         xi = pm.DensityDist('xi', logp, shape=n_d)
         x = pm.DensityDist('x', logp, shape=n_d, testval=xi)
         v = x
-        #Etrial = pm.Deterministic('Etrial', beta*energy_fn(v))
-        Etrial = pm.Deterministic('Etrial', -logp(v))
+        Etrial = pm.Deterministic('Etrial', beta*energy_fn(v))
+        #Etrial = pm.Deterministic('Etrial', -logp(v))
         Eprior = pm.Deterministic('Eprior', -logp(v))
         DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
         E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
     with model:
         step = [pm.NUTS(x), pm.Metropolis(xi)]
-        trace = pm.sample(nsamples, tune=nburn, step=step, 
+        trace = pm.sample(nsamples, tune=tune, step=step, 
                 chains=nchains, cores=ncpus, discard_tuned_samples=True)
         #ppc = pm.sample_posterior_predictive(trace, var_names=['x','xi','E_obs'])
-    plot_MC_torsion_result(trace,modes,T)
+    #plot_MC_torsion_result(trace,modes,T)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
-            'tune' : nburn}
+            'tune' : tune}
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,
                 '{}_trace.p'.format(samp_obj.label)),'wb'))

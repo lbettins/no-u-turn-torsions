@@ -53,13 +53,16 @@ class Energy(tt.Op):
     otypes = [tt.dscalar] # outputs a single scalar value (the log likelihood)
 
     def __init__(self, fn, ape_obj):
-        self.fn = fn
+        self.get_e_elect = fn
         self.ape_obj = ape_obj
-        self.egrad = EnergyGrad(self.fn, self.ape_obj)
+        self.n = JobN() # To keep track of jobs
+        self.egrad = EnergyGrad(self.get_e_elect, self.ape_obj)
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
-        result = self.fn(theta, self.ape_obj)
+        result = self.get_e_elect(theta, self.ape_obj, n=self.n)
+        self.n += 1
+        print('x', inputs, 'energy', result)
         outputs[0][0] = np.array(result) # output the log-likelihood
 
     def grad(self, inputs, g):
@@ -71,15 +74,34 @@ class EnergyGrad(tt.Op):
     otypes = [tt.dvector]
 
     def __init__(self, fn, ape_obj):
-        self.fn = fn
+        self.get_e_elect = fn
         self.ape_obj = ape_obj
+        self.n = JobN(n=-1)
 
     def perform(self, node, inputs, outputs):
         theta, = inputs
         def lnlike(values):
-            return self.fn(values, self.ape_obj)
-        grads = gradients(theta, lnlike, releps=1e-8)
+            return self.get_e_elect(values, self.ape_obj, n=self.n)
+        self.n -= 1
+        grads = gradients(theta, lnlike, abseps=np.pi/32)
+        print('x', inputs, 'grads', grads)
         outputs[0][0] = grads
+
+class JobN:
+    def __init__(self, n=0):
+        self.n = abs(n)
+        self.sign = 1 if n >= 0 else -1
+    def __add__(self, other):
+        self.n += other # So + passes by reference
+        return JobN(self.sign*self.n)
+    def __sub__(self, other):
+        self.n -= other
+        return JobN(self.sign*self.n)
+    def __str__(self):
+        return '{}'.format(self.sign*self.n)
+    def __repr__(self):
+        return '%i' % (self.sign*self.n)
+
 
 def gradients(vals, func, releps=1e-3, abseps=None, mineps=1e-9, reltol=1e-3,
                 epsscale=0.5):
@@ -146,6 +168,10 @@ def gradients(vals, func, releps=1e-3, abseps=None, mineps=1e-9, reltol=1e-3,
     # for each value in vals calculate the gradient
     count = 0
     for i in range(len(vals)):
+        # central difference
+        grads[i] = (func(vals[i]+0.5*eps[i]) - func(vals[i]-0.5*eps[i])) / eps[i]
+        continue
+
         # initial parameter diffs
         leps = eps[i]
         cureps = teps[i]
