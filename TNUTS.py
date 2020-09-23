@@ -37,7 +37,7 @@ def main():
     nsamples = args.ns if args.ns is not None else 1000
     nchains = args.nc if args.nc is not None else 5
     nburn = args.nburn if args.nburn is not None else int(nsamples/5)
-    hpc = args.hpc if args.hpc is not None else False
+    hpc = args.hpc if args.hpc else False
     if not protocol:
         protocol = 'TNUTS'
     if not T:

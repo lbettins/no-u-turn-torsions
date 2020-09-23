@@ -5,7 +5,7 @@ import os
 
 jobscript="""
 #!/bin/bash
-#SBATCH --job-name={label}_{nchains}_{nsamples}.job
+#SBATCH --job-name={label}.job
 #SBATCH --time=168:00:00
 #SBATCH --partition=mhg
 #SBATCH --account=mhg
@@ -14,7 +14,6 @@ jobscript="""
 #SBATCH --output={label}.o%j
 #SBATCH --error={label}.o%j
 
-#.bashrc will have $TNUTS aliased and activate needed environment
 source $HOME/.bashrc
 chmod +x $TNUTS/TNUTS.py
 $TNUTS/./TNUTS.py {abs_path_to_freq} -T {T} -n {ncpus} -ns {nsamples} -nc {nchains} -nburn {nburn} -hpc 1
