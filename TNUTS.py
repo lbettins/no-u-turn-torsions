@@ -21,6 +21,7 @@ def parse_command_line_arguments(command_line_args=None):
     parser.add_argument('-ns', type=int, help='number of samples')
     parser.add_argument('-nc', type=int, help='number of chains')
     parser.add_argument('-nburn', type=int, help='number of tuning steps')
+    parser.add_argument('-hpc', type=bool, help='if run on cluster')
 
     args = parser.parse_args(command_line_args)
     args = parser.parse_args()
@@ -36,6 +37,7 @@ def main():
     nsamples = args.ns if args.ns is not None else 1000
     nchains = args.nc if args.nc is not None else 5
     nburn = args.nburn if args.nburn is not None else int(nsamples/5)
+    hpc = args.hpc if args.hpc is not None else False
     if not protocol:
         protocol = 'TNUTS'
     if not T:
@@ -63,7 +65,7 @@ def main():
             protocol=protocol,
             level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
     run_loglike(samp_object, T, nsamples=nsamples, nchains=nchains,
-        tune=nburn, ncpus=ncpus)
+        tune=nburn, ncpus=ncpus, hpc=hpc)
 
 if __name__ == '__main__':
     main()
