@@ -5,7 +5,7 @@ import os
 
 jobscript="""
 #!/bin/bash
-#SBATCH --job-name={label}.job
+#SBATCH --job-name={label}_{nchains}_{nsamples}.job
 #SBATCH --time=168:00:00
 #SBATCH --partition=mhg
 #SBATCH --account=mhg
