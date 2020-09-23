@@ -78,12 +78,12 @@ def get_energy_at(x, samp_obj, n):
     if not os.path.exists(path):
         os.makedirs(path)
     if not samp_obj.is_QM_MM_INTERFACE:
-        E = get_electronic_energy(xyz, path, file_name, 1, 
+        E = get_electronic_energy(xyz, path, file_name, samp_obj.ncpus, 
             charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=samp_obj.level_of_theory, basis=samp_obj.basis,
             unrestricted=samp_obj.unrestricted) - samp_obj.e_elect
     else:
-        E = get_electronic_energy(xyz, path, file_name, 1,
+        E = get_electronic_energy(xyz, path, file_name, samp_obj.ncpus,
             charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=samp_obj.level_of_theory, basis=samp_obj.basis,
             unrestricted=samp_obj.unrestricted,

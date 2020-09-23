@@ -8,7 +8,7 @@ import os
 import warnings
 #warnings.filterwarnings("ignore")
 
-import pandas as pd
+#import pandas as pd
 #import seaborn as sns
 
 import theano.tensor as tt
@@ -26,7 +26,7 @@ from ape.sampling import SamplingJob
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
 def run_loglike(samp_obj,T,
-        nsamples=1000, tune=200, nchains=10, ncpus=4):
+        nsamples=1000, tune=200, nchains=10, ncpus=4, hpc=True):
     """
     """
     # Get the torsions from the APE object
@@ -57,12 +57,19 @@ def run_loglike(samp_obj,T,
         Eprior = pm.Deterministic('Eprior', -logp(v))
         DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
         E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
+
+    # Unfortunately, HPC doesn't support parallel sampling in pymc3 (yet)
+    if hpc:
+        ncpus = 1
+    else:
+        samp_obj.ncpus = int(samp_obj.ncpus/ncpus)
     with model:
         step = [pm.NUTS(x), pm.Metropolis(xi)]
         trace = pm.sample(nsamples, tune=tune, step=step, 
                 chains=nchains, cores=ncpus, discard_tuned_samples=True)
         #ppc = pm.sample_posterior_predictive(trace, var_names=['x','xi','E_obs'])
-    #plot_MC_torsion_result(trace,modes,T)
+    if not hps:
+        plot_MC_torsion_result(trace,modes,T)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune}
