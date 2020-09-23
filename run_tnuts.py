@@ -45,12 +45,12 @@ def main():
     nsamples = args.ns if args.ns is not None else 1000
     nchains = args.nc if args.nc is not None else 5
     nburn = args.nburn if args.nburn is not None else int(nsamples/5)
+    ncpus = args.n if args.n is not None else 16
 
     input_file = args.file.split('/')[-1]
     project_directory = os.path.abspath(os.path.dirname(args.file))
     label = '{}_{}_{}'.format(input_file.split('.')[0],nchains,nsamples)
     abs_path_to_freq = os.path.join(project_directory, input_file)
-    ncpus = args.n
     jobfile = os.path.join(project_directory, '{}.job'.format(label))
     with open(jobfile,'w') as f:
         f.write(jobscript.format(label=label,ncpus=ncpus,
