@@ -58,15 +58,10 @@ def run_loglike(samp_obj,T,
         DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
         E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
 
-    # Unfortunately, HPC doesn't support parallel sampling in pymc3 (yet)
-    if hpc:
-        ncpus = 1
-    else:
-        samp_obj.ncpus = int(samp_obj.ncpus/ncpus)
     with model:
         step = [pm.NUTS(x), pm.Metropolis(xi)]
         trace = pm.sample(nsamples, tune=tune, step=step, 
-                chains=nchains, cores=ncpus, discard_tuned_samples=True)
+                chains=nchains, cores=1, discard_tuned_samples=True)
         #ppc = pm.sample_posterior_predictive(trace, var_names=['x','xi','E_obs'])
     if not hps:
         plot_MC_torsion_result(trace,modes,T)
