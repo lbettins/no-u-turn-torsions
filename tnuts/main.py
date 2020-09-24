@@ -63,15 +63,15 @@ def run_loglike(samp_obj,T,
         trace = pm.sample(nsamples, tune=tune, step=step, 
                 chains=nchains, cores=1, discard_tuned_samples=True)
         #ppc = pm.sample_posterior_predictive(trace, var_names=['x','xi','E_obs'])
-    if not hps:
-        plot_MC_torsion_result(trace,modes,T)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune}
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,
                 '{}_trace.p'.format(samp_obj.label)),'wb'))
-
+    if not hpc:
+        plot_MC_torsion_result(trace,modes,T)
+    
 def plot_MC_torsion_result(trace, NModes, T=300):
     import matplotlib.pyplot as plt
     import matplotlib as mpl
