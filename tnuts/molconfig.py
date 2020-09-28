@@ -142,8 +142,8 @@ def get_grad_at(x, samp_obj, n,
     count = 0
     for i in range(len(x)):
         # central difference
-        xyzf = get_geometry_at(x+0.5*eps[i], samp_obj)
-        xyzi = get_geometry_at(x-0.5*eps[i], samp_obj)
+        xyzf = get_geometry_at(x[i]+0.5*eps[i], samp_obj)
+        xyzi = get_geometry_at(x[i]-0.5*eps[i], samp_obj)
         grads[i] = (  get_e_elect(xyzf,*args,**kwargs)\
                     - get_e_elect(xyzi,*args,**kwargs))\
                         /eps[i]
