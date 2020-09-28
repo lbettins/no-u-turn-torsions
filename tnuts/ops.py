@@ -100,6 +100,7 @@ class GetGrad(tt.Op):
 
     def perform(self, node, inputs, outputs):
         theta, = inputs
+        self.n += 1
         outputs[0][0] = self.get_grad(theta, self.ape_obj, n=self.n)
 
 class JobN:

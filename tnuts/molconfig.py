@@ -73,7 +73,6 @@ def get_energy_at(x, samp_obj, n):
         os.makedirs(samp_obj.output_directory)
     path = os.path.join(samp_obj.output_directory, 'nuts_out', samp_obj.label)
     file_name = '{}_{}'.format(n, uuid.uuid4().hex)
-    n += 1
     if not os.path.exists(path):
         os.makedirs(path)
     if not samp_obj.is_QM_MM_INTERFACE:
@@ -122,7 +121,6 @@ def get_grad_at(x, samp_obj, n,
         os.makedirs(path)
 
     # Define args and kwargs for running jobs
-    args = (path, file_name, samp_obj.ncpus)
     if not samp_obj.is_QM_MM_INTERFACE:
         kwargs = dict(charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=level_of_theory, basis=basis,
@@ -141,14 +139,20 @@ def get_grad_at(x, samp_obj, n,
     # for each value in vals calculate the gradient
     count = 0
     for i in range(len(x)):
-        # central difference
+        # central finite difference
         xyzf = get_geometry_at(x[i]+0.5*eps[i], samp_obj)
         xyzi = get_geometry_at(x[i]-0.5*eps[i], samp_obj)
-        grads[i] = (  get_e_elect(xyzf,*args,**kwargs)\
-                    - get_e_elect(xyzi,*args,**kwargs))\
-                        /eps[i]
+        file_namef = '{}_{}'.format(n, uuid.uuid4().hex)
+        file_namei = '{}_{}'.format(n, uuid.uuid4().hex)
+        argsf = (path, file_namef, samp_obj.ncpus)
+        argsi = (path, file_namei, samp_obj.ncpus)
+        ef = get_e_elect(xyzf,*argsf,**kwargs)
+        ei = get_e_elect(xyzi,*argsi,**kwargs)
+        grads[i] = (ef-ei)/eps[i]
         subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
-        file_name=file_name)], shell=True)
+        file_name=file_namef)], shell=True)
+        subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
+        file_name=file_namei)], shell=True)
     return grads
 
 if __name__ == '__main__':
