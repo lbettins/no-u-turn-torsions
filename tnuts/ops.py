@@ -52,11 +52,14 @@ class Energy(tt.Op):
     itypes = [tt.dvector] # expects a vector of parameter values when called
     otypes = [tt.dscalar] # outputs a single scalar value (the log likelihood)
 
-    def __init__(self, fn, ape_obj):
+    def __init__(self, fn, ape_obj, grad_fn=None):
         self.get_e_elect = fn
         self.ape_obj = ape_obj
         self.n = JobN() # To keep track of jobs
-        self.egrad = EnergyGrad(self.get_e_elect, self.ape_obj)
+        if grad_fn is None:
+            self.egrad = EnergyGrad(self.get_e_elect, self.ape_obj)
+        else:
+            self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
@@ -84,8 +87,20 @@ class EnergyGrad(tt.Op):
             return self.get_e_elect(values, self.ape_obj, n=self.n)
         self.n -= 1
         grads = gradients(theta, lnlike, abseps=np.pi/32)
-        print('x', inputs, 'grads', grads)
         outputs[0][0] = grads
+
+class GetGrad(tt.Op):
+    itypes = [tt.dvector]
+    otypes = [tt.dvector]
+
+    def __init__(self, fn, ape_obj, n):
+        self.get_grad = fn
+        self.ape_obj = ape_obj
+        self.n = n
+
+    def perform(self, node, inputs, outputs):
+        theta, = inputs
+        outputs[0][0] = self.get_grad(theta, self.ape_obj, n=self.n)
 
 class JobN:
     def __init__(self, n=0):

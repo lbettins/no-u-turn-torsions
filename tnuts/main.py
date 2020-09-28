@@ -6,71 +6,80 @@ import pymc3 as pm
 import rmgpy.constants as constants
 import os
 import warnings
-#warnings.filterwarnings("ignore")
-
-#import pandas as pd
-#import seaborn as sns
-
+warnings.filterwarnings("ignore")
 import theano.tensor as tt
 from scipy.integrate import quad
 from scipy import stats
 from pymc3.distributions import Interpolated
-
 from tnuts.ops import Energy, LogPrior
-from tnuts.molconfig import get_energy_at
+from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from ape.sampling import SamplingJob
 
-#sns.set_context('notebook')
-#plt.style.use('seaborn-darkgrid')
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
-def run_loglike(samp_obj,T,
-        nsamples=1000, tune=200, nchains=10, ncpus=4, hpc=True):
+def NUTS_run(samp_obj,T,
+        nsamples=1000, tune=200, nchains=10, ncpus=4, hpc=False):
     """
     """
+    # Define the model and model parameters
+    beta = 1/(constants.kB*T)*constants.E_h
+    logpE = lambda E: -E    # E must be dimensionless
+    logp, Z, modes = generate_umvt_logprior(samp_obj, T)
+    energy_fn = Energy(get_energy_at, samp_obj, grad_fn=get_grad_at)
+    n_d = len(modes)
+    if not hpc:
+        with pm.Model() as model:
+            xi = pm.DensityDist('xi', logp, shape=n_d)
+            x = pm.DensityDist('x', logp, shape=n_d, testval=xi)
+            Etrial = pm.Deterministic('Etrial', -logp(x)+\
+                    (np.random.rand()-0.5)/50)   # For computational ease
+            Eprior = pm.Deterministic('Eprior', -logp(x))
+            DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
+            alpha = pm.Deterministic('a', np.exp(-DeltaE))
+            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
+    else:
+        with pm.Model() as model:
+            xi = pm.DensityDist('xi', logp, shape=n_d)
+            x = pm.DensityDist('x', logp, shape=n_d, testval=xi)
+            Etrial = pm.Deterministic('Etrial', beta*energy_fn(x))
+            Eprior = pm.Deterministic('Eprior', -logp(x))
+            DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
+            alpha = pm.Deterministic('a', np.exp(-DeltaE))
+            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
+    with model:
+        step = [pm.NUTS(x), pm.Metropolis(xi)]
+        trace = pm.sample(nsamples, tune=tune, step=step, 
+                chains=nchains, cores=1, discard_tuned_samples=True)
+    Q = Z*np.mean(trace.a)
+    model_dict = {'model' : model, 'trace' : trace,\
+            'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
+            'tune' : tune, 'Q' : Q}
+    pickle.dump(model_dict,
+            open(os.path.join(samp_obj.output_directory,
+                '{}_trace.p'.format(samp_obj.label)),'wb'))
+    if not hpc:
+        plot_MC_torsion_result(trace,modes,T)
+        print("Prior partition function:\t", Z)
+        print("Posterior partition function:\t", np.mean(trace.a)*Z)
+        print("Expected likelihood:\t", np.mean(trace.a))
+
+def generate_umvt_logprior(samp_obj, T):
     # Get the torsions from the APE object
     samp_obj.parse()
     # With APE updates, should edit APE sampling.py to [only] sample torsions
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
     modes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
                 samp_obj=samp_obj)
-
     # Get the 1D Potential Energy functions
     energy_array = [mode.get_spline_fn() for mode in modes]
     # Get the symmetry numbers for each 1D torsion
     sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
-    # Get the number of torsions (in this case the dimensionality)
-    n_d = samp_obj.n_rotors
+    Z = np.array([quad(lambda x: fn(x), 0, 2*np.pi/s)[0]\
+            for fn,s in zip(energy_array,sym_nums)]).sum()
 
-    # Define the model and model parameters
-    beta = 1/(constants.kB*T)*constants.E_h
-    logpE = lambda E: -E    # E must be dimensionless
-    logp = LogPrior(energy_array, T, sym_nums)
-    energy_fn = Energy(get_energy_at, samp_obj)
-    with pm.Model() as model:
-        xi = pm.DensityDist('xi', logp, shape=n_d)
-        x = pm.DensityDist('x', logp, shape=n_d, testval=xi)
-        v = x
-        Etrial = pm.Deterministic('Etrial', beta*energy_fn(v))
-        #Etrial = pm.Deterministic('Etrial', -logp(v))
-        Eprior = pm.Deterministic('Eprior', -logp(v))
-        DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
-        E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
-
-    with model:
-        step = [pm.NUTS(x), pm.Metropolis(xi)]
-        trace = pm.sample(nsamples, tune=tune, step=step, 
-                chains=nchains, cores=1, discard_tuned_samples=True)
-        #ppc = pm.sample_posterior_predictive(trace, var_names=['x','xi','E_obs'])
-    model_dict = {'model' : model, 'trace' : trace,\
-            'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
-            'tune' : tune}
-    pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,
-                '{}_trace.p'.format(samp_obj.label)),'wb'))
-    if not hpc:
-        plot_MC_torsion_result(trace,modes,T)
+    # Return theano op LogPrior and partition function
+    return LogPrior(energy_array, T, sym_nums), Z, modes
     
 def plot_MC_torsion_result(trace, NModes, T=300):
     import matplotlib.pyplot as plt

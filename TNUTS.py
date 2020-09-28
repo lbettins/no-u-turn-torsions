@@ -7,7 +7,7 @@ Monte Carlo Simulations for Coupled Modes
 import argparse
 import os
 from ape.sampling import SamplingJob
-from tnuts.main import run_loglike
+from tnuts.main import NUTS_run
 
 def parse_command_line_arguments(command_line_args=None):
     
@@ -64,7 +64,7 @@ def main():
             ncpus=ncpus, output_directory=project_directory,
             protocol=protocol,
             level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
-    run_loglike(samp_object, T, nsamples=nsamples, nchains=nchains,
+    NUTS_run(samp_object, T, nsamples=nsamples, nchains=nchains,
         tune=nburn, ncpus=ncpus, hpc=hpc)
 
 if __name__ == '__main__':

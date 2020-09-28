@@ -4,7 +4,7 @@ import numpy as np
 import uuid
 import subprocess
 from arkane.common import symbol_by_number
-from ape.common import get_electronic_energy
+from ape.common import get_electronic_energy as get_e_elect
 from ape.InternalCoordinates import get_RedundantCoords, getXYZ
 
 def get_geometry_at(x, samp_obj):
@@ -67,7 +67,6 @@ def get_geometry_at(x, samp_obj):
     return getXYZ(samp_obj.symbols, geom) 
 
 def get_energy_at(x, samp_obj, n):
-    print(x)
     x = np.atleast_1d(x)
     xyz = get_geometry_at(x, samp_obj)
     if not os.path.exists(samp_obj.output_directory):
@@ -78,12 +77,12 @@ def get_energy_at(x, samp_obj, n):
     if not os.path.exists(path):
         os.makedirs(path)
     if not samp_obj.is_QM_MM_INTERFACE:
-        E = get_electronic_energy(xyz, path, file_name, samp_obj.ncpus, 
+        E = get_e_elect(xyz, path, file_name, samp_obj.ncpus, 
             charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=samp_obj.level_of_theory, basis=samp_obj.basis,
             unrestricted=samp_obj.unrestricted) - samp_obj.e_elect
     else:
-        E = get_electronic_energy(xyz, path, file_name, samp_obj.ncpus,
+        E = get_e_elect(xyz, path, file_name, samp_obj.ncpus,
             charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=samp_obj.level_of_theory, basis=samp_obj.basis,
             unrestricted=samp_obj.unrestricted,
@@ -94,8 +93,63 @@ def get_energy_at(x, samp_obj, n):
             fixed_molecule_string=samp_obj.fixed_molecule_string,
             opt=samp_obj.opt,
             number_of_fixed_atoms=samp_obj.number_of_fixed_atoms) - samp_obj.e_elect
-    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path, file_name=file_name)], shell=True)
+    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
+        file_name=file_name)], shell=True)
     return E
+
+def get_grad_at(x, samp_obj, n, 
+        level_of_theory='B97-D', basis='6-31G*',
+        abseps=np.pi/32):
+    x = np.atleast_1d(x)
+    grads = np.zeros(len(x))
+
+    # set steps
+    if isinstance(abseps, float):
+        eps = abseps*np.ones(len(x))
+    elif isinstance(abseps, (list, np.ndarray)):
+        if len(abseps) != len(x):
+            raise ValueError("Problem with input absolute step sizes")
+        eps = np.array(abseps)
+    else:
+        raise RuntimeError("Absolute step sizes are not a recognised type!")
+
+    # Bookkeeping
+    if not os.path.exists(samp_obj.output_directory):
+        os.makedirs(samp_obj.output_directory)
+    path = os.path.join(samp_obj.output_directory, 'nuts_out', samp_obj.label)
+    file_name = '{}_{}'.format(n, uuid.uuid4().hex)
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    # Define args and kwargs for running jobs
+    args = (path, file_name, samp_obj.ncpus)
+    if not samp_obj.is_QM_MM_INTERFACE:
+        kwargs = dict(charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
+            level_of_theory=level_of_theory, basis=basis,
+            unrestricted=samp_obj.unrestricted)
+    else:
+        kwargs = dict(charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
+            level_of_theory=level_of_theory, basis=basis,
+            unrestricted=samp_obj.unrestricted,
+            is_QM_MM_INTERFACE=samp_obj.is_QM_MM_INTERFACE,
+            QM_USER_CONNECT=samp_obj.QM_USER_CONNECT,
+            QM_ATOMS=samp_obj.QM_ATOMS,
+            force_field_params=samp_obj.force_field_params,
+            fixed_molecule_string=samp_obj.fixed_molecule_string,
+            opt=samp_obj.opt,
+            number_of_fixed_atoms=samp_obj.number_of_fixed_atoms)
+    # for each value in vals calculate the gradient
+    count = 0
+    for i in range(len(x)):
+        # central difference
+        xyzf = get_geometry_at(x+0.5*eps[i], samp_obj)
+        xyzi = get_geometry_at(x-0.5*eps[i], samp_obj)
+        grads[i] = (  get_e_elect(xyzf,*args,**kwargs)\
+                    - get_e_elect(xyzi,*args,**kwargs))\
+                        /eps[i]
+        subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
+        file_name=file_name)], shell=True)
+    return grads
 
 if __name__ == '__main__':
     directory = '/Users/lancebettinson/Documents/entropy/um-vt/MeOOH'
