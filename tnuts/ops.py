@@ -4,6 +4,7 @@ import theano
 import theano.tensor as tt
 import pymc3 as pm
 import rmgpy.constants as constants
+import copy
 
 class LogPrior(tt.Op):
     itypes=[tt.dvector]
@@ -56,21 +57,56 @@ class Energy(tt.Op):
         self.get_e_elect = fn
         self.ape_obj = ape_obj
         self.n = JobN() # To keep track of jobs
-        if grad_fn is None:
-            self.egrad = EnergyGrad(self.get_e_elect, self.ape_obj)
-        else:
-            self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
+        self.xcur = 0
+        self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
+        #if grad_fn is None:
+        #    self.egrad = EnergyGrad(self.get_e_elect, self.ape_obj)
+        #else:
+        #    self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
-        result = self.get_e_elect(theta, self.ape_obj, n=self.n)
+        dx = theta - self.xcur
+        ape_obj = copy.deepcopy(self.ape_obj)
+        result = self.get_e_elect(theta, ape_obj, n=self.n)
         self.n += 1
-        print('x', inputs, 'energy', result)
+        self.xcur = theta
+        #print('x', inputs, 'energy', result)
         outputs[0][0] = np.array(result) # output the log-likelihood
 
     def grad(self, inputs, g):
         theta, = inputs  # our parameters
         return [g[0]*self.egrad(theta)]
+
+class GetGrad(tt.Op):
+    itypes = [tt.dvector]
+    otypes = [tt.dvector]
+
+    def __init__(self, fn, ape_obj, n):
+        self.get_grad = fn
+        self.ape_obj = ape_obj
+        self.n = n
+
+    def perform(self, node, inputs, outputs):
+        theta, = inputs
+        self.n += 1
+        #ape_obj = copy.deepcopy(self.ape_obj)
+        outputs[0][0] = self.get_grad(theta, ape_obj, n=self.n)
+
+class JobN:
+    def __init__(self, n=0):
+        self.n = abs(n)
+        self.sign = 1 if n >= 0 else -1
+    def __add__(self, other):
+        self.n += other # So + passes by reference
+        return JobN(self.sign*self.n)
+    def __sub__(self, other):
+        self.n -= other
+        return JobN(self.sign*self.n)
+    def __str__(self):
+        return '{}'.format(self.sign*self.n)
+    def __repr__(self):
+        return '%i' % (self.sign*self.n)
 
 class EnergyGrad(tt.Op):
     itypes = [tt.dvector]
@@ -88,36 +124,6 @@ class EnergyGrad(tt.Op):
         self.n -= 1
         grads = gradients(theta, lnlike, abseps=np.pi/32)
         outputs[0][0] = grads
-
-class GetGrad(tt.Op):
-    itypes = [tt.dvector]
-    otypes = [tt.dvector]
-
-    def __init__(self, fn, ape_obj, n):
-        self.get_grad = fn
-        self.ape_obj = ape_obj
-        self.n = n
-
-    def perform(self, node, inputs, outputs):
-        theta, = inputs
-        self.n += 1
-        outputs[0][0] = self.get_grad(theta, self.ape_obj, n=self.n)
-
-class JobN:
-    def __init__(self, n=0):
-        self.n = abs(n)
-        self.sign = 1 if n >= 0 else -1
-    def __add__(self, other):
-        self.n += other # So + passes by reference
-        return JobN(self.sign*self.n)
-    def __sub__(self, other):
-        self.n -= other
-        return JobN(self.sign*self.n)
-    def __str__(self):
-        return '{}'.format(self.sign*self.n)
-    def __repr__(self):
-        return '%i' % (self.sign*self.n)
-
 
 def gradients(vals, func, releps=1e-3, abseps=None, mineps=1e-9, reltol=1e-3,
                 epsscale=0.5):

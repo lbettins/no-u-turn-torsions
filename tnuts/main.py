@@ -11,7 +11,7 @@ import theano.tensor as tt
 from scipy.integrate import quad
 from scipy import stats
 from pymc3.distributions import Interpolated
-from tnuts.ops import Energy, LogPrior
+from tnuts.ops import Energy
 from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from ape.sampling import SamplingJob
@@ -26,8 +26,8 @@ def NUTS_run(samp_obj,T,
     beta = 1/(constants.kB*T)*constants.E_h
     logpE = lambda E: -E    # E must be dimensionless
     logp, Z, modes = generate_umvt_logprior(samp_obj, T)
-    #energy_fn = Energy(get_energy_at, samp_obj, grad_fn=get_grad_at)
-    energy_fn = Energy(get_energy_at, samp_obj)
+    energy_fn = Energy(get_energy_at, samp_obj, grad_fn=get_grad_at)
+    #energy_fn = Energy(get_energy_at, samp_obj)
     n_d = len(modes)
     if not hpc:
         with pm.Model() as model:
@@ -66,6 +66,7 @@ def NUTS_run(samp_obj,T,
         print("Expected likelihood:\t", np.mean(trace.a))
 
 def generate_umvt_logprior(samp_obj, T):
+    from tnuts.ops import LogPrior
     # Get the torsions from the APE object
     samp_obj.parse()
     # With APE updates, should edit APE sampling.py to [only] sample torsions

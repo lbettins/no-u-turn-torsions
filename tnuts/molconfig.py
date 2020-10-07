@@ -6,6 +6,7 @@ import subprocess
 from arkane.common import symbol_by_number
 from ape.common import get_electronic_energy as get_e_elect
 from ape.InternalCoordinates import get_RedundantCoords, getXYZ
+from tnuts.common import get_energy_gradient
 
 def get_geometry_at(x, samp_obj):
     """
@@ -21,6 +22,7 @@ def get_geometry_at(x, samp_obj):
     x = np.atleast_1d(x)
 
     # Create a copy of the internal object at x_i
+    #internal = copy.deepcopy(samp_obj.torsion_internal)
     internal = copy.deepcopy(samp_obj.torsion_internal)
 
     # Number of dihedrals
@@ -48,7 +50,7 @@ def get_geometry_at(x, samp_obj):
 
     def transform_geom(x, internal, qk):
         """
-        For reasons unknown to me, internal coordinate transformation needs to be
+        Internal coordinate transformation needs to be
         incremental. It seems pi/3 is the limit, pi/2 breaks the bank.
         These transformations are done in intervals of pi/6, until the last transformation
         which is done in x%(pi/6).
@@ -56,6 +58,9 @@ def get_geometry_at(x, samp_obj):
         if x > np.pi/6:
             return internal.transform_int_step((qk*np.pi/6).reshape(-1,))\
                     + transform_geom(x-np.pi/6, internal, qk)
+        elif x < -np.pi/6:
+            return internal.transform_int_step((-qk*np.pi/6).reshape(-1,))\
+                    + transform_geom(x+np.pi/6, internal, qk)
         else:
             return internal.transform_int_step((qk*x).reshape(-1,))
     
@@ -64,11 +69,12 @@ def get_geometry_at(x, samp_obj):
     else:
         for qki,xi in zip(qks,x):
             geom += transform_geom(xi, internal, qki)
+    return getXYZ(samp_obj.symbols, internal.cart_coords), internal
     return getXYZ(samp_obj.symbols, geom) 
 
 def get_energy_at(x, samp_obj, n):
     x = np.atleast_1d(x)
-    xyz = get_geometry_at(x, samp_obj)
+    xyz, internal = get_geometry_at(x, samp_obj)
     if not os.path.exists(samp_obj.output_directory):
         os.makedirs(samp_obj.output_directory)
     path = os.path.join(samp_obj.output_directory, 'nuts_out', samp_obj.label)
@@ -97,10 +103,22 @@ def get_energy_at(x, samp_obj, n):
     return E
 
 def get_grad_at(x, samp_obj, n, 
-        level_of_theory='B97-D', basis='6-31G*',
+        level_of_theory=None, basis=None,
         abseps=np.pi/32):
+    if level_of_theory is None:
+        level_of_theory = samp_obj.level_of_theory
+    if basis is None:
+        basis = samp_obj.basis
+
     x = np.atleast_1d(x)
     grads = np.zeros(len(x))
+    scans = [samp_obj.rotors_dict[n+1]['scan']\
+            for n in range(samp_obj.n_rotors)]
+    scan_indices = samp_obj.torsion_internal.B_indices[-samp_obj.n_rotors:]
+    torsion_inds = [len(samp_obj.torsion_internal.B_indices) - samp_obj.n_rotors +\
+            scan_indices.index([ind-1 for ind in scan]) for scan in scans]
+    signs = [-1 if samp_obj.torsion_internal.prim_coords[ind] > 0 else 1\
+            for ind in torsion_inds]
 
     # set steps
     if isinstance(abseps, float):
@@ -122,11 +140,13 @@ def get_grad_at(x, samp_obj, n,
 
     # Define args and kwargs for running jobs
     if not samp_obj.is_QM_MM_INTERFACE:
-        kwargs = dict(charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
+        kwargs = dict(charge=samp_obj.charge,
+            multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=level_of_theory, basis=basis,
             unrestricted=samp_obj.unrestricted)
     else:
-        kwargs = dict(charge=samp_obj.charge, multiplicity=samp_obj.spin_multiplicity,
+        kwargs = dict(charge=samp_obj.charge,
+            multiplicity=samp_obj.spin_multiplicity,
             level_of_theory=level_of_theory, basis=basis,
             unrestricted=samp_obj.unrestricted,
             is_QM_MM_INTERFACE=samp_obj.is_QM_MM_INTERFACE,
@@ -136,24 +156,48 @@ def get_grad_at(x, samp_obj, n,
             fixed_molecule_string=samp_obj.fixed_molecule_string,
             opt=samp_obj.opt,
             number_of_fixed_atoms=samp_obj.number_of_fixed_atoms)
+    args = (path, file_name, samp_obj.ncpus)
+
+    xyz, internal = get_geometry_at(x, samp_obj)
+    grad = get_energy_gradient(xyz,*args,**kwargs)
+    B = internal.B_prim
+    Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
+
+    grad = Bt_inv.dot(grad)[torsion_inds] 
+    grad *= signs
+
+    #for i,ind in enumerate(torsion_inds):
+    #    if not samp_obj.torsion_internal.prim_coords[ind] > 0:
+    #        grad[i] *= -1
+    
+    #grad = samp_obj.torsion_internal.Bt_inv.dot(grad)[torsion_inds]
+    return grad
+    
     # for each value in vals calculate the gradient
-    count = 0
-    for i in range(len(x)):
-        # central finite difference
-        xyzf = get_geometry_at(x[i]+0.5*eps[i], samp_obj)
-        xyzi = get_geometry_at(x[i]-0.5*eps[i], samp_obj)
-        file_namef = '{}_{}'.format(n, uuid.uuid4().hex)
-        file_namei = '{}_{}'.format(n, uuid.uuid4().hex)
-        argsf = (path, file_namef, samp_obj.ncpus)
-        argsi = (path, file_namei, samp_obj.ncpus)
-        ef = get_e_elect(xyzf,*argsf,**kwargs)
-        ei = get_e_elect(xyzi,*argsi,**kwargs)
-        grads[i] = (ef-ei)/eps[i]
-        subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
-        file_name=file_namef)], shell=True)
-        subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
-        file_name=file_namei)], shell=True)
-    return grads
+    #count = 0
+    #xf = copy.deepcopy(x)
+    #xi = copy.deepcopy(x)
+    #for i in range(len(x)):
+    #    # central finite difference
+    #    xf[i] += 0.5*eps[i]
+    #    xi[i] += -0.5*eps[i]
+    #    xyzf = get_geometry_at(xf, samp_obj_copyf)
+    #    xyzi = get_geometry_at(xi, samp_obj_copyi)
+    #    file_namef = '{}_{}'.format(n, uuid.uuid4().hex)
+    #    file_namei = '{}_{}'.format(n, uuid.uuid4().hex)
+    #    argsf = (path, file_namef, samp_obj.ncpus)
+    #    argsi = (path, file_namei, samp_obj.ncpus)
+    #    ef = get_e_elect(xyzf,*argsf,**kwargs)
+    #    ei = get_e_elect(xyzi,*argsi,**kwargs)
+    #    grads[i] = (ef-ei)/eps[i]
+    #    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
+    #    file_name=file_namef)], shell=True)
+    #    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
+    #    file_name=file_namei)], shell=True)
+    #    xf[i] = x[i]
+    #    xi[i] = x[i]
+    #return grads, gradi
+    #return grads, samp_obj.torsion_internal.Bt_inv.dot(grad)[-samp_obj.n_rotors:]
 
 if __name__ == '__main__':
     directory = '/Users/lancebettinson/Documents/entropy/um-vt/MeOOH'
