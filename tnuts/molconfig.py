@@ -159,7 +159,7 @@ def get_grad_at(x, samp_obj, n,
     args = (path, file_name, samp_obj.ncpus)
 
     xyz, internal = get_geometry_at(x, samp_obj)
-    grad = get_energy_gradient(xyz,*args,**kwargs)
+    E,grad = get_energy_gradient(xyz,*args,**kwargs)
     B = internal.B_prim
     Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
 
@@ -171,7 +171,7 @@ def get_grad_at(x, samp_obj, n,
     #        grad[i] *= -1
     
     #grad = samp_obj.torsion_internal.Bt_inv.dot(grad)[torsion_inds]
-    return grad
+    return E,grad
     
     # for each value in vals calculate the gradient
     #count = 0

@@ -45,7 +45,7 @@ class LogPriorGrad(tt.Op):
         grads = np.zeros(self.ndim)
         for i in range(self.ndim):
             grads[i] = -self.beta*self.fns[i](theta[i], 1)
-        #print(theta, grads)
+        print("LogPrior grad:",theta, -1.0/self.beta*grads)
         outputs[0][0] = grads
 
 class Energy(tt.Op):
@@ -67,15 +67,15 @@ class Energy(tt.Op):
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
         dx = theta - self.xcur
-        ape_obj = copy.deepcopy(self.ape_obj)
-        result = self.get_e_elect(theta, ape_obj, n=self.n)
+        #ape_obj = copy.deepcopy(self.ape_obj)
+        result = self.get_e_elect(theta, self.ape_obj, n=self.n)
         self.n += 1
         self.xcur = theta
         #print('x', inputs, 'energy', result)
         outputs[0][0] = np.array(result) # output the log-likelihood
 
     def grad(self, inputs, g):
-        theta, = inputs  # our parameters
+        theta, = inputs  # our parameter
         return [g[0]*self.egrad(theta)]
 
 class GetGrad(tt.Op):
@@ -91,7 +91,9 @@ class GetGrad(tt.Op):
         theta, = inputs
         self.n += 1
         #ape_obj = copy.deepcopy(self.ape_obj)
-        outputs[0][0] = self.get_grad(theta, ape_obj, n=self.n)
+        E,grad = self.get_grad(theta, self.ape_obj, n=self.n)
+        print("PosteriorGrad:",theta,grad)
+        outputs[0][0] = grad
 
 class JobN:
     def __init__(self, n=0):

@@ -20,6 +20,8 @@ def load_gradient(QChemLog):
                 while '----------------------------------------------------' not in line:
                     natoms += 1
                     line = f.readline()
+            if 'Total energy in the final basis set' in line:
+                E = float(line.split()[-1])
             # Read gradient
             if 'Gradient of SCF Energy' in line:
                 grad = np.zeros(3*natoms, np.float64)
@@ -34,7 +36,7 @@ def load_gradient(QChemLog):
                 # Convert from atomic units (Hartree/Bohr_radius^2) to J/m
                 #grad *= 4.35974417e-18 / 5.291772108e-11
             line = f.readline()
-    return grad
+    return E,grad
 
 if __name__ == "__main__":
     from ape.qchem import QChemLog

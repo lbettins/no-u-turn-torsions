@@ -52,6 +52,6 @@ def get_energy_gradient(xyz, path, file_name, ncpus, charge=None, multiplicity=N
 
     # Parse output file to get the calculated electronic energy
     output_file_path = os.path.join(path, '{}.q.out'.format(file_name))
-    grad = load_gradient(QChemLog(output_file_path)) # cartesian, Hartree
+    E,grad = load_gradient(QChemLog(output_file_path)) # cartesian, Hartree
 
-    return grad
+    return E,grad
