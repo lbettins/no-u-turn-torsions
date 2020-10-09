@@ -27,9 +27,9 @@ def NUTS_run(samp_obj,T,
     beta = 1/(constants.kB*T)*constants.E_h
     logpE = lambda E: -E    # E must be dimensionless
     logp, Z, modes = generate_umvt_logprior(samp_obj, T)
-    energy_fn = Energy(get_energy_at, samp_obj, grad_fn=get_grad_at)
-    #energy_fn = Energy(get_energy_at, samp_obj)
     syms = np.array([mode.get_symmetry_number() for mode in modes])
+    energy_fn = Energy(get_energy_at, samp_obj, syms, grad_fn=get_grad_at)
+    #energy_fn = Energy(get_energy_at, samp_obj)
     n_d = len(modes)
     if not hpc:
         with pm.Model() as model:
