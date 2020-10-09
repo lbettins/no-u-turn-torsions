@@ -7,6 +7,12 @@ from arkane.common import symbol_by_number
 from ape.common import get_electronic_energy as get_e_elect
 from ape.InternalCoordinates import get_RedundantCoords, getXYZ
 
+class geometry:
+    def __init__(self, internal, xcur, qfile):
+        self.internal = internal
+        self.xcur = xcur
+        self.qfile = qfile
+
 def get_torsional_geometry(x, samp_obj):
     """
     x_i = [0, ... ]

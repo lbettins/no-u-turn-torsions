@@ -40,11 +40,15 @@ def get_geometry_at(x, samp_obj):
 
     # Displacement identity vector for each torsion
     qks = [np.zeros(nrow, dtype=int) for n in range(n_rotors)]
+    qk = np.zeros(nrow, dtype=int)
     for i,ind in enumerate(torsion_inds):
         qks[i][ind] = 1
+        qk[ind] = 1
         if internal.prim_coords[ind] > 0:
-            qks[i] *= -1
-
+            qks[i][ind] *= -1
+            qk[ind] *= -1
+    print(qk)
+    
     # Initial geometry (at equilibrium position)
     geom = copy.deepcopy(samp_obj.cart_coords)
 
@@ -65,10 +69,10 @@ def get_geometry_at(x, samp_obj):
             return internal.transform_int_step((qk*x).reshape(-1,))
     
     if np.isscalar(x):
-        geom += transform_geom(x, internal, qks[0])
+        geom += transform_geom(x%(2*np.pi), internal, qks[0])
     else:
         for qki,xi in zip(qks,x):
-            geom += transform_geom(xi, internal, qki)
+            geom += transform_geom(xi%(2*np.pi), internal, qki)
     return getXYZ(samp_obj.symbols, internal.cart_coords), internal
     return getXYZ(samp_obj.symbols, geom) 
 
@@ -165,6 +169,9 @@ def get_grad_at(x, samp_obj, n,
 
     grad = Bt_inv.dot(grad)[torsion_inds] 
     grad *= signs
+
+    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
+        file_name=file_name)], shell=True)
 
     #for i,ind in enumerate(torsion_inds):
     #    if not samp_obj.torsion_internal.prim_coords[ind] > 0:

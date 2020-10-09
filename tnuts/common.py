@@ -18,6 +18,9 @@ from tnuts.job.job import Job
 from ape.qchem import QChemLog
 from tnuts.qchem import load_gradient
 
+def back_transform(internal, dq):
+    pass
+
 def get_energy_gradient(xyz, path, file_name, ncpus, charge=None, multiplicity=None, level_of_theory=None, basis=None, unrestricted=None, \
         is_QM_MM_INTERFACE=None, QM_USER_CONNECT=None, QM_ATOMS=None, force_field_params=None, fixed_molecule_string=None, opt=None, number_of_fixed_atoms=None):
     #file_name = 'output'

@@ -10,6 +10,7 @@ import math
 
 def load_gradient(QChemLog):
     natoms = 0
+    E = 0
     with open(QChemLog.path, 'r') as f:
         line = f.readline()
         while line != '':
