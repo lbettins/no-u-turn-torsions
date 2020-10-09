@@ -9,6 +9,7 @@ import copy
 class LogPrior(tt.Op):
     itypes=[tt.dvector]
     otypes=[tt.dscalar]
+
     def __init__(self, fn_array, T, sym_n_array):
         self.beta = 1/(constants.kB*T)*constants.E_h
         self.Epriors = fn_array
@@ -18,22 +19,23 @@ class LogPrior(tt.Op):
 
     def perform(self, node, inputs, outputs):
         theta, = inputs
-        #theta %= 2*np.pi/self.sym_ns
+        theta %= 2*np.pi/self.sym_ns
         result = 0
         for i in range(self.ndim):
             #theta[i] -= 2*np.pi/self.sym_ns[i] if theta[i] > np.pi/self.sym_ns[i] else 0
-            thetai = theta%(2*np.pi/self.sym_ns)
-            result -= self.beta*self.Epriors[i](thetai)
+            #thetai = theta%(2*np.pi/self.sym_ns)
+            result -= self.beta*self.Epriors[i](theta[i])
         outputs[0][0] = np.array(result)
 
     def grad(self, inputs, g):
         theta, = np.array(inputs)
-        #theta %= 2*np.pi/self.sym_ns
-        return [g[0] * self.dlogp(theta%(2*np.pi/self.sym_ns))]
+        theta %= 2*np.pi/self.sym_ns
+        return [g[0] * self.dlogp(theta)]
 
 class LogPriorGrad(tt.Op):
     itypes=[tt.dvector]
     otypes=[tt.dvector]
+
     def __init__(self, prior_fns, beta, ndim):
         self.fns = prior_fns
         self.ndim = ndim
@@ -50,9 +52,10 @@ class LogPriorGrad(tt.Op):
 class Energy(tt.Op):
     itypes = [tt.dvector] # expects a vector of parameter values when called
     otypes = [tt.dscalar] # outputs a single scalar value (the log likelihood)
-    def __init__(self, fn, ape_obj, grad_fn=None):
+    def __init__(self, fn, ape_obj, sym_n_array, grad_fn=None):
         self.get_e_elect = fn
         self.ape_obj = ape_obj
+        self.sym_ns = sym_n_array
         self.n = JobN() # To keep track of jobs
         self.xcur = 0
         self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
@@ -63,6 +66,7 @@ class Energy(tt.Op):
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
+        theta %= 2*np.pi/self.sym_ns
         #dx = theta - self.xcur
         #ape_obj = copy.deepcopy(self.ape_obj)
         result = self.get_e_elect(theta, self.ape_obj, n=self.n)
@@ -73,6 +77,7 @@ class Energy(tt.Op):
 
     def grad(self, inputs, g):
         theta, = inputs  # our parameter
+        theta %= 2*np.pi/self.sym_ns
         return [g[0]*self.egrad(theta)]
 
 class GetGrad(tt.Op):

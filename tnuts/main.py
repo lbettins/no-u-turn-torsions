@@ -7,6 +7,7 @@ import rmgpy.constants as constants
 import os
 import warnings
 warnings.filterwarnings("ignore")
+import theano
 import theano.tensor as tt
 from scipy.integrate import quad
 from scipy import stats
@@ -28,28 +29,34 @@ def NUTS_run(samp_obj,T,
     logp, Z, modes = generate_umvt_logprior(samp_obj, T)
     energy_fn = Energy(get_energy_at, samp_obj, grad_fn=get_grad_at)
     #energy_fn = Energy(get_energy_at, samp_obj)
+    syms = np.array([mode.get_symmetry_number() for mode in modes])
     n_d = len(modes)
     if not hpc:
         with pm.Model() as model:
-            xi = pm.DensityDist('xi', logp, shape=n_d)
-            x = pm.DensityDist('x', logp, shape=n_d, testval=xi)
-            Etrial = pm.Deterministic('Etrial', -logp(x)+\
-                    (np.random.rand()-0.5)/50)   # For computational ease
-            Eprior = pm.Deterministic('Eprior', -logp(x))
-            DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
+            #xi = pm.DensityDist('xi', logp, shape=n_d)
+            x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
+            #xmod = pm.Deterministic('xmod', x%(2*np.pi/syms))
+            #Etrial = pm.Deterministic('Etrial', -logp(x)+\
+            #        (np.random.rand()-0.5)/50)   # For computational ease
+            #Eprior = pm.Deterministic('Eprior', -logp(x))
+            #DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
+            DeltaE = (-logp(x)+(np.random.rand()-0.5)/50) -\
+                    (-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
     else:
         with pm.Model() as model:
-            xi = pm.DensityDist('xi', logp, shape=n_d)
-            x = pm.DensityDist('x', logp, shape=n_d, testval=xi)
-            Etrial = pm.Deterministic('Etrial', beta*energy_fn(x))
-            Eprior = pm.Deterministic('Eprior', -logp(x))
-            DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
+            #xi = pm.DensityDist('xi', logp, shape=n_d)
+            x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
+            #Etrial = pm.Deterministic('Etrial', beta*energy_fn(x))
+            #Eprior = pm.Deterministic('Eprior', -logp(x))
+            DeltaE = (beta*energy_fn(x))-\
+                    (-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
     with model:
-        step = [pm.NUTS(x), pm.Metropolis(xi)]
+        #step = [pm.NUTS(x), pm.Metropolis(xi)]
+        step = pm.NUTS()
         trace = pm.sample(nsamples, tune=tune, step=step, 
                 chains=nchains, cores=1, discard_tuned_samples=True)
     Q = Z*np.mean(trace.a)
@@ -90,7 +97,7 @@ def plot_MC_torsion_result(trace, NModes, T=300):
     beta = 1/(constants.kB*T)*constants.E_h
     n_d = len(NModes)
     logpriors = [mode.get_spline_fn() for mode in NModes]
-    syms = [mode.get_symmetry_number() for mode in NModes]
+    syms = np.array([mode.get_symmetry_number() for mode in NModes])
     xvals = [np.linspace(-np.pi/sig, np.pi/sig, 500) for sig in syms]
     yvals = [np.exp(-beta*V(xvals[i]))/quad(lambda x: np.exp(-beta*V(x)),
         -np.pi/sig,np.pi/sig)[0]\
@@ -103,7 +110,8 @@ def plot_MC_torsion_result(trace, NModes, T=300):
     if n_d >= 2:
         import corner
         hist_kwargs = dict(density=True)
-        samples=np.vstack(trace['x'])
+        samples=np.vstack(trace['x']%(2*np.pi/syms))
+        #samples=np.vstack(trace['xmod'])
         figure = corner.corner(samples, 
                 labels=["$x_{{{0}}}$".format(i) for i in range(1, n_d+1)],
                 hist_kwargs=hist_kwargs)
