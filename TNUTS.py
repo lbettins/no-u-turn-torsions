@@ -37,12 +37,16 @@ def main():
     nsamples = args.ns if args.ns is not None else 1000
     nchains = args.nc if args.nc is not None else 5
     nburn = args.nburn if args.nburn is not None else int(nsamples/5)
-    hpc = args.hpc if args.hpc else False
+    hpc = args.hpc
     if not protocol:
         protocol = 'TNUTS'
     if not T:
         T = 300
     project_directory = os.path.abspath(os.path.dirname(args.file))
+    
+    # SCRATCH directory must be set before script runs
+    # This is done for ease of transferability to different hardware setups
+    output_directory = os.path.expandvars('$SCRATCH')
 
     # imaginary bonds for QMMM calculation
     # atom indices starts from 1
@@ -64,6 +68,13 @@ def main():
             ncpus=ncpus, output_directory=project_directory,
             protocol=protocol,
             level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
+    #samp_object = SamplingJob(
+    #        input_file=os.path.join(project_directory,input_file),
+    #        label=label, 
+    #        ncpus=ncpus, output_directory=output_directory,
+    #        protocol=protocol,
+    #        level_of_theory='HF', basis='sto-3g', thresh=0.5)
+
     NUTS_run(samp_object, T, nsamples=nsamples, nchains=nchains,
         tune=nburn, ncpus=ncpus, hpc=hpc)
 
