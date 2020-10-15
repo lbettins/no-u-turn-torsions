@@ -3,23 +3,80 @@
 """
 APE common module
 """
-
 import os
 import math
 import copy
-import logging
 import numpy as np
-
 import rmgpy.constants as constants
-
 from arkane.statmech import is_linear
-
 from tnuts.job.job import Job
 from ape.qchem import QChemLog
 from tnuts.qchem import load_gradient
 
-def back_transform(internal, dq):
-    pass
+def evolve_dihedral_by(dq, internal, cart_rms_thresh=1e-15):
+    remaining_int_step = dq
+    prev_cart_coords = copy.deepcopy(internal.cart_coords)
+    cur_cart_coords = internal.cart_coords.copy()
+    cur_internals = internal.prim_coords
+    target_internals = cur_internals + dq
+
+    B_prim = internal.B_prim
+    # Bt_inv may be overriden in other coordiante systems so we
+    # calculate it 'manually' here.
+    Bt_inv_prim = np.linalg.pinv(B_prim.dot(B_prim.T)).dot(B_prim)
+
+    last_rms = 9999
+    prev_internals = cur_internals
+    internal.backtransform_failed = True
+    internal.prev_cross = None
+    nloop = 1000
+    for i in range(nloop):
+        cart_step = Bt_inv_prim.T.dot(remaining_int_step)
+        if internal.nHcap is not None:
+            cart_step[-(internal.nHcap*3):] = 0 # to creat the QMMM boundary in QMMM system # Shih-Cheng Li
+        # Recalculate exact Bt_inv every cycle. Costly.
+        cart_rms = np.sqrt(np.mean(cart_step**2))
+        # Update cartesian coordinates
+        cur_cart_coords += cart_step
+        # Determine new internal coordinates
+        new_internals = internal.update_internals(cur_cart_coords, prev_internals)
+        remaining_int_step = target_internals - new_internals
+        internal_rms = np.sqrt(np.mean(remaining_int_step**2))
+        internal.log(f"Cycle {i}: rms(Δcart)={cart_rms:1.4e}, "
+                 f"rms(Δinternal) = {internal_rms:1.5e}")
+
+        # This assumes the first cart_rms won't be > 9999 ;)
+        if (cart_rms < last_rms):
+            # Store results of the conversion cycle for laster use, if
+            # the internal-cartesian-transformation goes bad.
+            best_cycle = (copy.deepcopy(cur_cart_coords), copy.deepcopy(new_internals.copy()))
+            best_cycle_ind = i
+            last_rms = cart_rms
+            ratio = 1
+        elif i != 0:
+            cur_cart_coords, new_internals = best_cycle
+            remaining_int_step = target_internals - new_internals
+            # Reduce the moving step to avoid failing
+            ratio *= 2
+            remaining_int_step /= ratio
+            if ratio > 16:
+                break
+            else:
+                continue
+        else:
+            raise Exception("Internal-cartesian back-transformation already "
+                            "failed in the first step. Aborting!")
+        prev_internals = new_internals
+
+        last_rms = cart_rms
+        if cart_rms < cart_rms_thresh:
+            internal.log("Internal to cartesian transformation converged!")
+            internal.backtransform_failed = False
+            break
+        internal._prim_coords = np.array(new_internals)
+    internal.log("")
+    internal.cart_coords = cur_cart_coords
+    return cur_cart_coords
 
 def get_energy_gradient(xyz, path, file_name, ncpus, charge=None, multiplicity=None, level_of_theory=None, basis=None, unrestricted=None, \
         is_QM_MM_INTERFACE=None, QM_USER_CONNECT=None, QM_ATOMS=None, force_field_params=None, fixed_molecule_string=None, opt=None, number_of_fixed_atoms=None):

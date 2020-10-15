@@ -22,7 +22,6 @@ def get_geometry_at(x, samp_obj):
     x = np.atleast_1d(x)
 
     # Create a copy of the internal object at x_i
-    #internal = copy.deepcopy(samp_obj.torsion_internal)
     internal = copy.deepcopy(samp_obj.torsion_internal)
 
     # Number of dihedrals
@@ -173,46 +172,17 @@ def get_grad_at(x, samp_obj, n,
     subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
         file_name=file_name)], shell=True)
 
-    #for i,ind in enumerate(torsion_inds):
-    #    if not samp_obj.torsion_internal.prim_coords[ind] > 0:
-    #        grad[i] *= -1
-    
-    #grad = samp_obj.torsion_internal.Bt_inv.dot(grad)[torsion_inds]
     return E,grad
-    
-    # for each value in vals calculate the gradient
-    #count = 0
-    #xf = copy.deepcopy(x)
-    #xi = copy.deepcopy(x)
-    #for i in range(len(x)):
-    #    # central finite difference
-    #    xf[i] += 0.5*eps[i]
-    #    xi[i] += -0.5*eps[i]
-    #    xyzf = get_geometry_at(xf, samp_obj_copyf)
-    #    xyzi = get_geometry_at(xi, samp_obj_copyi)
-    #    file_namef = '{}_{}'.format(n, uuid.uuid4().hex)
-    #    file_namei = '{}_{}'.format(n, uuid.uuid4().hex)
-    #    argsf = (path, file_namef, samp_obj.ncpus)
-    #    argsi = (path, file_namei, samp_obj.ncpus)
-    #    ef = get_e_elect(xyzf,*argsf,**kwargs)
-    #    ei = get_e_elect(xyzi,*argsi,**kwargs)
-    #    grads[i] = (ef-ei)/eps[i]
-    #    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
-    #    file_name=file_namef)], shell=True)
-    #    subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=path,
-    #    file_name=file_namei)], shell=True)
-    #    xf[i] = x[i]
-    #    xi[i] = x[i]
-    #return grads, gradi
-    #return grads, samp_obj.torsion_internal.Bt_inv.dot(grad)[-samp_obj.n_rotors:]
 
 if __name__ == '__main__':
-    directory = '/Users/lancebettinson/Documents/entropy/um-vt/MeOOH'
-    freq_file = os.path.join(directory,'MeOOH.out')
-    label = 'MeOOH'
+    directory = '/Users/lancebettinson/Documents/entropy/um-vt/PROPIONIC_ACID'
+    freq_file = os.path.join(directory,'propanoic.out')
+    label = 'propanoic'
     from ape.sampling import SamplingJob
     samp_obj = SamplingJob(label,freq_file,output_directory=directory,
             protocol='TNUTS')
     samp_obj.parse()
     samp_obj.sampling()
-    get_geometry_at([26*2*np.pi/360,11*2*np.pi/360], samp_obj)
+    xyz = get_geometry_at([26*2*np.pi/360,11*2*np.pi/360,45*2*np.pi/360], samp_obj)
+    print(xyz)
+    

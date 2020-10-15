@@ -52,17 +52,13 @@ class LogPriorGrad(tt.Op):
 class Energy(tt.Op):
     itypes = [tt.dvector] # expects a vector of parameter values when called
     otypes = [tt.dscalar] # outputs a single scalar value (the log likelihood)
-    def __init__(self, fn, ape_obj, sym_n_array, grad_fn=None):
+    def __init__(self, fn, ape_obj, sym_n_array, grad_fn):
         self.get_e_elect = fn
         self.ape_obj = ape_obj
         self.sym_ns = sym_n_array
         self.n = JobN() # To keep track of jobs
         self.xcur = 0
         self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
-        #if grad_fn is None:
-        #    self.egrad = EnergyGrad(self.get_e_elect, self.ape_obj)
-        #else:
-        #    self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
