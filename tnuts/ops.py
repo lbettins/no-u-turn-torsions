@@ -52,43 +52,42 @@ class LogPriorGrad(tt.Op):
 class Energy(tt.Op):
     itypes = [tt.dvector] # expects a vector of parameter values when called
     otypes = [tt.dscalar] # outputs a single scalar value (the log likelihood)
-    def __init__(self, fn, ape_obj, sym_n_array, grad_fn):
-        self.get_e_elect = fn
-        self.ape_obj = ape_obj
-        self.sym_ns = sym_n_array
-        self.n = JobN() # To keep track of jobs
-        self.xcur = 0
-        self.egrad = GetGrad(grad_fn, self.ape_obj, self.n)
+    #def __init__(self, fn, ape_obj, sym_n_array, grad_fn):
+    def __init__(self, geom):
+        #self.get_e_elect = fn
+        #self.ape_obj = ape_obj
+        #self.internal = ape_obj.torsion_internal
+        #self.sym_ns = sym_n_array
+        self.geom = geom
+        self.get_e_elect = self.geom.get_energy_grad_at
+        self.egrad = GetGrad(self.geom)
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
-        theta %= 2*np.pi/self.sym_ns
-        #dx = theta - self.xcur
-        #ape_obj = copy.deepcopy(self.ape_obj)
-        result = self.get_e_elect(theta, self.ape_obj, n=self.n)
-        self.n += 1
-        self.xcur = theta
+        theta %= 2*np.pi/self.geom.symmetry_numbers
+        #result = self.get_e_elect(theta, self.ape_obj, n=self.n)
+        result = self.get_e_elect(theta, which="energy")
         #print('x', inputs, 'energy', result)
         outputs[0][0] = np.array(result) # output the log-likelihood
 
     def grad(self, inputs, g):
         theta, = inputs  # our parameter
-        theta %= 2*np.pi/self.sym_ns
+        theta %= 2*np.pi/self.geom.symmetry_numbers
         return [g[0]*self.egrad(theta)]
 
 class GetGrad(tt.Op):
     itypes = [tt.dvector]
     otypes = [tt.dvector]
-    def __init__(self, fn, ape_obj, n):
-        self.get_grad = fn
-        self.ape_obj = ape_obj
-        self.n = n
+    #def __init__(self, fn, ape_obj, n):
+    def __init__(self, geom):
+        self.geom = geom
+        self.get_grad = self.geom.get_energy_grad_at
+        #self.ape_obj = ape_obj
 
     def perform(self, node, inputs, outputs):
         theta, = inputs
-        self.n += 1
-        #ape_obj = copy.deepcopy(self.ape_obj)
-        E,grad = self.get_grad(theta, self.ape_obj, n=self.n)
+        #grad = self.get_grad(theta, self.ape_obj, n=self.n)
+        grad = self.get_grad(theta, which="grad")
         #print("PosteriorGrad:",theta,grad)
         outputs[0][0] = grad
 

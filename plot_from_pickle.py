@@ -64,10 +64,13 @@ def NUTS_run(samp_obj,T,
     Q = Z*np.mean(trace.a)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
-            'tune' : tune, 'Q' : Q}
+            'tune' : tune, 'Q' : Q, 'modes' : modes, 'T' : T}
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,
-                '{}_trace.p'.format(samp_obj.label)),'wb'))
+                '{label}_{nc}_{ns}_{T}_trace.p'.format(label=samp_obj.label,
+                                                        nc=nchains,
+                                                        ns=nsamples,
+                                                        T=T)),'wb'))
     if not hpc:
         plot_MC_torsion_result(trace,modes,T)
         print("Prior partition function:\t", Z)
@@ -127,4 +130,4 @@ def plot_MC_torsion_result(trace, NModes, T=300):
     plt.show()
 
 if __name__=='__main__':
-    T = 300
+    plot_MC_torsion_result(trace, NModes, T=300)

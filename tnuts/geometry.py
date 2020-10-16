@@ -83,6 +83,7 @@ class Geometry:
     def hard_reset(self):
         self.reset()
         self.dict = {}
+        self.count = 0
 
     def get_geometry_at(self, x):
         """
@@ -95,7 +96,7 @@ class Geometry:
         for i,ind in enumerate(self.torsion_inds):
             step[ind] = self.qk[ind] * delta_x[i]
 
-        def transform_geom(dq, internal, max_step=np.pi/64):
+        def transform_geom(dq, internal, max_step=np.pi/32):
             """
             Internal coordinate transformation needs to be incremental
             """
@@ -109,8 +110,7 @@ class Geometry:
             else:
                 return evolve_dihedral_by(dq, internal)
 
-
-        xyz = transform_geom(step, self.internal, np.pi/8)
+        xyz = transform_geom(step, self.internal, np.pi/32)
         #print(xyz is self.geom)
         #print(self.geom is self.internal.cart_coords)
 
@@ -127,7 +127,7 @@ class Geometry:
         try:
         # IF the gradient or energy has already been calculated for the position,
         # find the desired value and return it immediately
-            egrad = self.dict[tuple(x)]
+            egrad = self.dict[tuple(2*np.around(x/2, 2))]
             if which == "energy":
                 return egrad[0]
             else:
@@ -137,23 +137,37 @@ class Geometry:
             pass
          
         #Get the energy/gradient from QChem
-        xyz = self.get_geometry_at(x)
+        xyz = self.get_geometry_at(tuple(x))
         file_name = '{}_{}'.format(self.count, uuid.uuid4().hex)
         args = (self.path, file_name, self.samp_obj.ncpus)
         E,grad = get_energy_gradient(xyz,*args,**self.kwargs)
 
-        B = self.internal.B_prim
-        Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
     
-        grad = Bt_inv.dot(grad)[self.torsion_inds]
-        grad *= self.signs
+        # if the job succeeds, proceed normally
+        if grad is not None and not E == 0:
+            B = self.internal.B_prim
+            Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
     
-        subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=self.path,
-            file_name=file_name)], shell=True)
-    
-        # Set the energy/gradient in memory and return
-        self.dict[tuple(x)] = (E, grad)
+            grad = Bt_inv.dot(grad)[self.torsion_inds]
+            grad *= self.signs
+
+            print("At",self.xcur,"energy is",E,"and gradient is",grad)
+            subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=self.path,
+                file_name=file_name)], shell=True)
+            self.Ecur = E
+            self.gradcur = grad
+            # Set the energy/gradient in memory and return
+            self.dict[tuple(2*np.around(x/2,2))] = (E, grad)
+        # or else reset internals and try again
+        else:
+            self.hard_reset()
+            self.get_energy_grad_at(tuple(x),which=which)
+            
         self.count += 1
+        if self.count > 20:
+            self.reset()
+        elif self.count > 1000:
+            self.hard_reset()
         if which == "energy":
             return E
         else:
@@ -172,37 +186,55 @@ if __name__ == '__main__':
                 samp_obj=samp_obj)
     syms = np.array([mode.get_symmetry_number() for mode in modes])
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
+    
+    x = 0./syms
+    xyz = geom.get_geometry_at(x)
+    with open(os.path.join(os.path.expandvars("$SCRATCH"),"geom_evol_test.txt"),'a') as f:
+        for i in range(100):
+            f.write(str(7)+'\n')
+            f.write("#Position"+str(geom.xcur)+'\n')
+            f.write(xyz+'\n')
+            print(geom.xcur,'\n',xyz,'\n')
+            if i < 50:
+                xyz = geom.get_geometry_at(x+i*np.array([2*np.pi/50,4*np.pi/50]))
+            elif i > 50:
+                xyz = geom.get_geometry_at(x-i*np.array([4*np.pi/50,2*np.pi/50]))
+            elif i == 50:
+                xyz = geom.get_geometry_at(geom.xcur)
+
+    exit()
+
 
     import time
     tic1 = time.perf_counter()
     xyz = geom.get_geometry_at( 0*np.pi/syms )
-    grad = geom.get_energy_grad_at( geom.xcur )
+    #grad = geom.get_energy_grad_at( geom.xcur )
     toc1 = time.perf_counter()
     print(geom.xcur)
     
     tic2 = time.perf_counter()
     xyz1 = geom.get_geometry_at( np.pi/syms )
-    grad = geom.get_energy_grad_at( geom.xcur, which="grad" )
+    #grad = geom.get_energy_grad_at( geom.xcur, which="grad" )
     toc2 = time.perf_counter()
     print(geom.xcur)
     
     tic3 = time.perf_counter()
     xyz2 = geom.get_geometry_at( np.pi/syms+0.01 )
-    grad = geom.get_energy_grad_at( geom.xcur, which="grad" )
+    #grad = geom.get_energy_grad_at( geom.xcur, which="grad" )
     toc3 = time.perf_counter()
 
     tic4 = time.perf_counter()
-    grad = geom.get_energy_grad_at( 0*np.pi/syms, which="grad" )
+    #grad = geom.get_energy_grad_at( 0*np.pi/syms, which="grad" )
     toc4 = time.perf_counter()
     print(geom.xcur)
-    #print(xyz2+'\n')
-    #print(xyz1+'\n')
-    #print(xyz+'\n')
+    print(xyz2+'\n')
+    print(xyz1+'\n')
+    print(xyz+'\n')
     print(f"Geometry 0 calculation: {toc1 - tic1:0.4f} seconds")
     print(f"Maximally perturbed: {toc2 - tic2:0.4f} seconds")
     print(f"Small pertubation from max: {toc3 - tic3:0.4f} seconds")
     print(f"Reading from dictionary: {toc4 - tic4:0.4f} seconds")
 
-    print(geom.signs)
-    print(geom.dict)
+    #print(geom.signs)
+    #print(geom.dict)
 

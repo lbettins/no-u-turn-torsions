@@ -62,18 +62,18 @@ def main():
     print(label)
     print(input_file)
     print(project_directory)
-    samp_object = SamplingJob(
-            input_file=os.path.join(project_directory,input_file),
-            label=label, 
-            ncpus=ncpus, output_directory=project_directory,
-            protocol=protocol,
-            level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
     #samp_object = SamplingJob(
     #        input_file=os.path.join(project_directory,input_file),
     #        label=label, 
-    #        ncpus=ncpus, output_directory=output_directory,
+    #        ncpus=ncpus, output_directory=project_directory,
     #        protocol=protocol,
-    #        level_of_theory='HF', basis='sto-3g', thresh=0.5)
+    #        level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
+    samp_object = SamplingJob(
+            input_file=os.path.join(project_directory,input_file),
+            label=label, 
+            ncpus=ncpus, output_directory=output_directory,
+            protocol=protocol,
+            level_of_theory='HF', basis='sto-3g', thresh=0.5)
 
     NUTS_run(samp_object, T, nsamples=nsamples, nchains=nchains,
         tune=nburn, ncpus=ncpus, hpc=hpc)

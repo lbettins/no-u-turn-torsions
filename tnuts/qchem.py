@@ -11,6 +11,7 @@ import math
 def load_gradient(QChemLog):
     natoms = 0
     E = 0
+    grad = None
     with open(QChemLog.path, 'r') as f:
         line = f.readline()
         while line != '':
@@ -37,6 +38,8 @@ def load_gradient(QChemLog):
                 # Convert from atomic units (Hartree/Bohr_radius^2) to J/m
                 #grad *= 4.35974417e-18 / 5.291772108e-11
             line = f.readline()
+    #if grad is None:
+    #    grad = np.zeros(3*natoms, np.float64)
     return E,grad
 
 if __name__ == "__main__":
