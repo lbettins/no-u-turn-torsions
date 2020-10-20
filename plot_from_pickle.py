@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import arviz as az
+import argparse
 import dill as pickle
 import numpy as np
 import pymc3 as pm
@@ -17,65 +18,38 @@ from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from tnuts.geometry import Geometry
 from ape.sampling import SamplingJob
+from tnuts.main import plot_MC_torsion_result
 
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
-def NUTS_run(samp_obj,T,
-        nsamples=1000, tune=200, nchains=10, ncpus=4, hpc=False):
-    """
-    """
-    # Define the model and model parameters
-    beta = 1/(constants.kB*T)*constants.E_h
-    logpE = lambda E: -E    # E must be dimensionless
-    logp, Z, modes = generate_umvt_logprior(samp_obj, T)
-    syms = np.array([mode.get_symmetry_number() for mode in modes])
-    geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
-    #energy_fn = Energy(get_energy_at, samp_obj, syms, grad_fn=get_grad_at)
-    energy_fn = Energy(geom)
-    n_d = len(modes)
-    if not hpc:
-        with pm.Model() as model:
-            #xi = pm.DensityDist('xi', logp, shape=n_d)
-            x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
-            #xmod = pm.Deterministic('xmod', x%(2*np.pi/syms))
-            #Etrial = pm.Deterministic('Etrial', -logp(x)+\
-            #        (np.random.rand()-0.5)/50)   # For computational ease
-            #Eprior = pm.Deterministic('Eprior', -logp(x))
-            #DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
-            DeltaE = (-logp(x)+(np.random.rand()-0.5)/50) -\
-                    (-logp(x))
-            alpha = pm.Deterministic('a', np.exp(-DeltaE))
-            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
-    else:
-        with pm.Model() as model:
-            #xi = pm.DensityDist('xi', logp, shape=n_d)
-            x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
-            #Etrial = pm.Deterministic('Etrial', beta*energy_fn(x))
-            #Eprior = pm.Deterministic('Eprior', -logp(x))
-            DeltaE = (beta*energy_fn(x))-\
-                    (-logp(x))
-            alpha = pm.Deterministic('a', np.exp(-DeltaE))
-            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
-    with model:
-        #step = [pm.NUTS(x), pm.Metropolis(xi)]
-        step = pm.NUTS()
-        trace = pm.sample(nsamples, tune=tune, step=step, 
-                chains=nchains, cores=1, discard_tuned_samples=True)
-    Q = Z*np.mean(trace.a)
-    model_dict = {'model' : model, 'trace' : trace,\
-            'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
-            'tune' : tune, 'Q' : Q, 'modes' : modes, 'T' : T}
-    pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,
-                '{label}_{nc}_{ns}_{T}_trace.p'.format(label=samp_obj.label,
-                                                        nc=nchains,
-                                                        ns=nsamples,
-                                                        T=T)),'wb'))
-    if not hpc:
-        plot_MC_torsion_result(trace,modes,T)
-        print("Prior partition function:\t", Z)
-        print("Posterior partition function:\t", np.mean(trace.a)*Z)
-        print("Expected likelihood:\t", np.mean(trace.a))
+def parse_command_line_arguments(command_line_args=None):
+
+    parser = argparse.ArgumentParser(description='Automated Property Estimator (APE)')
+    parser.add_argument('file', metavar='FILE', type=str, nargs=1,
+                        help='a file describing the job to execute')
+    args = parser.parse_args(command_line_args)
+    args = parser.parse_args()
+    args.file = args.file[0]
+    return args
+
+def main():
+    args = parse_command_line_arguments()
+    pkl = args.file.split('/')[-1]
+    project_directory = os.path.abspath(os.path.dirname(args.file))
+    with open(os.path.join(project_directory,pkl), 'rb') as pklfile:
+        pkl_dict = pickle.load(pklfile)
+    samp_obj = SamplingJob(
+            input_file='/Users/lancebettinson/Documents/entropy/um-vt/EtOH/EtOH_hf.out',
+            label='EtOH_hf',
+            ncpus=4, output_directory=os.path.expandvars('$SCRATCH'),
+            protocol='TNUTS',
+            level_of_theory='HF', basis='sto-3g', thresh=0.5)
+    print(pkl_dict)
+    pkl_dict['T'] = 400
+    LogP, Z, modes = generate_umvt_logprior(samp_obj,pkl_dict['T'])
+    print(Z,'versus',pkl_dict['trace']['a'])
+    plot_MC_torsion_result(pkl_dict['trace'],modes,pkl_dict['T'])
+    
 
 def generate_umvt_logprior(samp_obj, T):
     from tnuts.ops import LogPrior
@@ -95,39 +69,5 @@ def generate_umvt_logprior(samp_obj, T):
     # Return theano op LogPrior and partition function
     return LogPrior(energy_array, T, sym_nums), Z, modes
     
-def plot_MC_torsion_result(trace, NModes, T=300):
-    import matplotlib.pyplot as plt
-    import matplotlib as mpl
-    mpl.use('MacOSX')
-    beta = 1/(constants.kB*T)*constants.E_h
-    n_d = len(NModes)
-    logpriors = [mode.get_spline_fn() for mode in NModes]
-    syms = np.array([mode.get_symmetry_number() for mode in NModes])
-    xvals = [np.linspace(-np.pi/sig, np.pi/sig, 500) for sig in syms]
-    yvals = [np.exp(-beta*V(xvals[i]))/quad(lambda x: np.exp(-beta*V(x)),
-        -np.pi/sig,np.pi/sig)[0]\
-            for i,V,sig in zip(range(n_d),logpriors,syms)]
-    for i in range(n_d):
-        print("Symmetry values for mode",i,"is",syms[i])
-        plt.figure(2)
-        fullx = np.linspace(-np.pi,np.pi,500)
-        plt.plot(fullx, logpriors[i](fullx))
-    if n_d >= 2:
-        import corner
-        hist_kwargs = dict(density=True)
-        samples=np.vstack(trace['x']%(2*np.pi/syms))
-        #samples=np.vstack(trace['xmod'])
-        figure = corner.corner(samples, 
-                labels=["$x_{{{0}}}$".format(i) for i in range(1, n_d+1)],
-                hist_kwargs=hist_kwargs)
-
-        # Extract the axes
-        axes = np.array(figure.axes).reshape((n_d, n_d))
-        # Loop over the diagonal
-        for i in range(n_d):
-            ax = axes[i, i]
-            ax.plot(xvals[i],yvals[i], color="b")
-    plt.show()
-
 if __name__=='__main__':
-    plot_MC_torsion_result(trace, NModes, T=300)
+    main()

@@ -8,9 +8,37 @@ Used to parse QChem output files when APE won't do the job
 import numpy as np
 import math
 
+def get_level_of_theory(QChemLog):
+    lvl_of_theory = None
+    basis = None
+    lot_kwargs = {}
+    with open(QChemLog.path, 'r') as f:
+        line = f.readline()
+        while line != '':
+            if 'basis' in line.lower():
+                if line.lower().split()[0] == 'basis':
+                    basis = line.split()[-1]
+            elif 'ecp' in line.lower():
+                if line.lower().split()[0] == 'ecp':
+                    #basis += "\necp\tdef2ecp"
+                    pass
+            elif 'method' in line.lower() or 'exchange' in line.lower() and len(line.split()) == 2:
+                lvl_of_theory = line.split()[-1]
+                if 'omega' in lvl_of_theory.lower():
+                    lvl_of_theory = lvl_of_theory.replace('omega','w')
+            if basis and lvl_of_theory:
+                lot_kwargs['basis'] = basis
+                lot_kwargs['level_of_theory'] = lvl_of_theory
+                return lot_kwargs
+            line = f.readline()
+        f.close()
+        lot_kwargs['basis'] = basis
+        lot_kwargs['level_of_theory'] = lvl_of_theory
+        return charge, spin_multiplicity, basis, lvl_of_theory
+
 def load_gradient(QChemLog):
     natoms = 0
-    E = 0
+    E = None
     grad = None
     with open(QChemLog.path, 'r') as f:
         line = f.readline()
@@ -38,6 +66,7 @@ def load_gradient(QChemLog):
                 # Convert from atomic units (Hartree/Bohr_radius^2) to J/m
                 #grad *= 4.35974417e-18 / 5.291772108e-11
             line = f.readline()
+        f.close()
     #if grad is None:
     #    grad = np.zeros(3*natoms, np.float64)
     return E,grad

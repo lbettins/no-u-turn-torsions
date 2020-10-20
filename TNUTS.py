@@ -7,6 +7,8 @@ Monte Carlo Simulations for Coupled Modes
 import argparse
 import os
 from ape.sampling import SamplingJob
+from ape.qchem import QChemLog
+from tnuts.qchem import get_level_of_theory
 from tnuts.main import NUTS_run
 
 def parse_command_line_arguments(command_line_args=None):
@@ -62,18 +64,18 @@ def main():
     print(label)
     print(input_file)
     print(project_directory)
-    #samp_object = SamplingJob(
-    #        input_file=os.path.join(project_directory,input_file),
-    #        label=label, 
-    #        ncpus=ncpus, output_directory=project_directory,
-    #        protocol=protocol,
-    #        level_of_theory='B97-D', basis='6-31G*', thresh=0.5)
+    Log = QChemLog(os.path.join(project_directory, input_file))
+    level_of_theory_kwargs = get_level_of_theory(Log)
     samp_object = SamplingJob(
             input_file=os.path.join(project_directory,input_file),
             label=label, 
             ncpus=ncpus, output_directory=output_directory,
             protocol=protocol,
-            level_of_theory='HF', basis='sto-3g', thresh=0.5)
+            thresh=0.5,
+            **level_of_theory_kwargs)
+    samp_object.parse()
+    # With APE updates, should edit APE sampling.py to [only] sample torsions
+    #xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
 
     NUTS_run(samp_object, T, nsamples=nsamples, nchains=nchains,
         tune=nburn, ncpus=ncpus, hpc=hpc)

@@ -6,8 +6,6 @@ Format of input files for Qchem software.
 
 fine = """\n   max_scf_cycles   250
    geom_opt_max_cycles   1
-   basis2 6-31G*
-   scf_algorithm rca_diis
    SYM_IGNORE  TRUE
    print_input   true
    geom_opt_dmax   80

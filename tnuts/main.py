@@ -29,6 +29,9 @@ def NUTS_run(samp_obj,T,
     logpE = lambda E: -E    # E must be dimensionless
     logp, Z, modes = generate_umvt_logprior(samp_obj, T)
     syms = np.array([mode.get_symmetry_number() for mode in modes])
+    Is = np.array([mode.get_I() for mode in modes])
+    print(Is)
+    #Is *= (constants.amu*(10**-20))
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     #energy_fn = Energy(get_energy_at, samp_obj, syms, grad_fn=get_grad_at)
     energy_fn = Energy(geom)
@@ -42,10 +45,15 @@ def NUTS_run(samp_obj,T,
             #        (np.random.rand()-0.5)/50)   # For computational ease
             #Eprior = pm.Deterministic('Eprior', -logp(x))
             #DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
-            DeltaE = (-logp(x)+(np.random.rand()-0.5)/50) -\
+            DeltaE = (-logp(x)+(np.random.rand()-0.5)/500) -\
                     (-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
+        with model:
+            #step = [pm.NUTS(x), pm.Metropolis(xi)]
+            step = pm.NUTS(target_accept=0.70)
+            trace = pm.sample(nsamples, tune=tune, step=step, 
+                    chains=nchains, cores=ncpus, discard_tuned_samples=False)
     else:
         with pm.Model() as model:
             #xi = pm.DensityDist('xi', logp, shape=n_d)
@@ -56,18 +64,24 @@ def NUTS_run(samp_obj,T,
                     (-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
-    with model:
-        #step = [pm.NUTS(x), pm.Metropolis(xi)]
-        step = pm.NUTS()
-        trace = pm.sample(nsamples, tune=tune, step=step, 
-                chains=nchains, cores=1, discard_tuned_samples=True)
+        with model:
+            #step = [pm.NUTS(x), pm.Metropolis(xi)]
+            step = pm.NUTS(target_accept=0.7)
+            trace = pm.sample(nsamples, tune=tune, step=step, 
+                    chains=nchains, cores=1, discard_tuned_samples=False)
     Q = Z*np.mean(trace.a)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
-            'tune' : tune, 'Q' : Q}
+            'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
+            'geom_obj' : geom}
+    pkl_file = '{label}_{nc}_{ns}_{T}K_{n}.p'
+    n = 0
+    pkl_kwargs = dict(label=samp_obj.label, nc=nchains, ns=nsamples, T=T, n=n)
+    while os.path.exists(os.path.join(samp_obj.output_directory, pkl_file.format(**pkl_kwargs))):
+        n += 1
+        pkl_kwargs['n'] = n
     pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,
-                '{}_trace.p'.format(samp_obj.label)),'wb'))
+            open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'))
     if not hpc:
         plot_MC_torsion_result(trace,modes,T)
         print("Prior partition function:\t", Z)
@@ -77,7 +91,6 @@ def NUTS_run(samp_obj,T,
 def generate_umvt_logprior(samp_obj, T):
     from tnuts.ops import LogPrior
     # Get the torsions from the APE object
-    samp_obj.parse()
     # With APE updates, should edit APE sampling.py to [only] sample torsions
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
     modes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
@@ -112,7 +125,12 @@ def plot_MC_torsion_result(trace, NModes, T=300):
     if n_d >= 2:
         import corner
         hist_kwargs = dict(density=True)
-        samples=np.vstack(trace['x']%(2*np.pi/syms))
+        xsamples = [trace['x']%(2*np.pi/syms)]
+        xsamples = np.array([np.array([xi if xi < np.pi/sym \
+                                else xi-2*np.pi/sym \
+                                for sym,xi in zip(syms,x)]) for x in xsamples[0]])
+        #print(xsamples)
+        samples=np.vstack(xsamples)
         #samples=np.vstack(trace['xmod'])
         figure = corner.corner(samples, 
                 labels=["$x_{{{0}}}$".format(i) for i in range(1, n_d+1)],
