@@ -93,7 +93,7 @@ class Geometry:
     def hard_reset(self):
         self.reset()
         self.dict = {}
-        self.count = 0
+        #self.count = 0
 
     def get_geometry_at(self, x):
         """
@@ -184,7 +184,7 @@ class Geometry:
             return self.get_energy_grad_at(x,which=which)
             
         self.count += 1
-        if self.count > 500:
+        if self.count > 100:
             self.reset()
         elif self.count > 6000:
             self.hard_reset()
