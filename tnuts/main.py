@@ -36,10 +36,25 @@ def NUTS_run(samp_obj,T,
     #energy_fn = Energy(get_energy_at, samp_obj, syms, grad_fn=get_grad_at)
     energy_fn = Energy(geom)
     n_d = len(modes)
+    #x = np.linspace(-np.pi,np.pi,150)
+    #fns = np.array([np.exp(-beta*mode.get_spline_fn()(x)) for mode in modes])
+    #totalfns = np.ones(len(fns[0]))
+    #for fn in fns:
+    #    totalfns *= fn
+    #print(totalfns)
+    #lk = []
+    #for i in range(1,len(fns[0])):
+    #    lk.append(totalfns[i]/totalfns[i-1])
+    #print(lk)
+    #print(np.mean(np.array(lk)))
+    resolution = 5  #degrees
+    step_scale = resolution*(np.pi/180) / (1/n_d)**(0.25)
+    print("Step scale is",step_scale)
     if not hpc:
         with pm.Model() as model:
             #xi = pm.DensityDist('xi', logp, shape=n_d)
-            x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
+            #x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.uniform(-1,1,n_d)*np.pi)
+            x = pm.DensityDist('x', logp, shape=n_d)
             #xmod = pm.Deterministic('xmod', x%(2*np.pi/syms))
             #Etrial = pm.Deterministic('Etrial', -logp(x)+\
             #        (np.random.rand()-0.5)/50)   # For computational ease
@@ -51,7 +66,10 @@ def NUTS_run(samp_obj,T,
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
         with model:
             #step = [pm.NUTS(x), pm.Metropolis(xi)]
-            step = pm.NUTS(target_accept=0.70)
+            #step = pm.NUTS(target_accept=0.50, step_scale=0.15, adapt_step_size=False)
+            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=4,
+                    max_treedepth=7, adapt_step_size=False)
+            #step = pm.NUTS(target_accept=0.6, early_max_treedepth=5, max_treedepth=7)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=ncpus, discard_tuned_samples=False)
     else:
@@ -66,7 +84,9 @@ def NUTS_run(samp_obj,T,
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
         with model:
             #step = [pm.NUTS(x), pm.Metropolis(xi)]
-            step = pm.NUTS(target_accept=0.7)
+            #step = pm.NUTS(target_accept=0.5)
+            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=4,
+                    max_treedepth=6, adapt_step_size=False)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=1, discard_tuned_samples=False)
     Q = Z*np.mean(trace.a)
@@ -74,9 +94,9 @@ def NUTS_run(samp_obj,T,
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
             'geom_obj' : geom}
-    pkl_file = '{label}_{nc}_{ns}_{T}K_{n}.p'
+    pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{n}.p'
     n = 0
-    pkl_kwargs = dict(label=samp_obj.label, nc=nchains, ns=nsamples, T=T, n=n)
+    pkl_kwargs = dict(label=samp_obj.label, nc=nchains, nburn=tune, ns=nsamples, T=T, n=n)
     while os.path.exists(os.path.join(samp_obj.output_directory, pkl_file.format(**pkl_kwargs))):
         n += 1
         pkl_kwargs['n'] = n
@@ -99,7 +119,7 @@ def generate_umvt_logprior(samp_obj, T):
     energy_array = [mode.get_spline_fn() for mode in modes]
     # Get the symmetry numbers for each 1D torsion
     sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
-    Z = np.array([quad(lambda x: fn(x), 0, 2*np.pi/s)[0]\
+    Z = np.array([quad(lambda x: fn(x), -np.pi/s, np.pi/s)[0]\
             for fn,s in zip(energy_array,sym_nums)]).sum()
 
     # Return theano op LogPrior and partition function

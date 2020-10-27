@@ -64,16 +64,18 @@ class Energy(tt.Op):
  
     def perform(self, node, inputs, outputs):
         theta, = inputs  # this will contain my variables
-        theta %= 2*np.pi/self.geom.symmetry_numbers
         #result = self.get_e_elect(theta, self.ape_obj, n=self.n)
         result = self.get_e_elect(theta, which="energy")
         #print('x', inputs, 'energy', result)
+
+        theta %= 2*np.pi/self.geom.symmetry_numbers
         outputs[0][0] = np.array(result) # output the log-likelihood
 
     def grad(self, inputs, g):
         theta, = inputs  # our parameter
+        grad = self.egrad(theta)
         theta %= 2*np.pi/self.geom.symmetry_numbers
-        return [g[0]*self.egrad(theta)]
+        return [g[0]*grad]
 
 class GetGrad(tt.Op):
     itypes = [tt.dvector]

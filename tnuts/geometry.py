@@ -92,21 +92,27 @@ class Geometry:
 
     def hard_reset(self):
         self.reset()
-        self.dict = {}
+        self.clear_dict()
         #self.count = 0
+
+    def clear_dict(self):
+        self.dict = {}
 
     def get_geometry_at(self, x):
         """
         Δx = x - xi
         """
         x = np.atleast_1d(x)
-        x %= 2*np.pi/self.symmetry_numbers
+        #if (x > 2*np.pi).any() or (x < -np.pi).any():
+        #    x %= 2*np.pi/self.symmetry_numbers
         delta_x = x - self.xcur
+        if (delta_x > np.pi/36).any():
+            x %= 2*np.pi/self.symmetry_numbers
         step = np.zeros(len(self.qk))
         for i,ind in enumerate(self.torsion_inds):
             step[ind] = self.qk[ind] * delta_x[i]
 
-        def transform_geom(dq, internal, max_step=np.pi/32):
+        def transform_geom(dq, internal, max_step=np.pi/36):
             """
             Internal coordinate transformation needs to be incremental
             """
@@ -120,7 +126,7 @@ class Geometry:
             else:
                 return evolve_dihedral_by(dq, internal)
 
-        xyz = transform_geom(step, self.internal, np.pi/32)
+        xyz = transform_geom(step, self.internal, np.pi/36)
 
         if xyz is not self.geom:
             self.geom = xyz
@@ -132,14 +138,16 @@ class Geometry:
         """
         Returns E, gradient. Stores both values to dict with positional key.
         """
+        roundx = 2*np.around(x/2,2)
         try:
         # IF the gradient or energy has already been calculated for the position,
         # find the desired value and return it immediately
-            egrad = self.dict[tuple(2*np.around(x/2, 2))]
+            egrad = self.dict[tuple(roundx)]
             if which == "energy":
                 log_trajectory(self.traj_log,x,egrad[0],egrad[1])
-                return egrad[0]
+                return egrad[0] + ((x-roundx)*egrad[1]).sum()
             else:
+                self.clear_dict()
                 return egrad[1]
         # OTHERWISE we need to calculate it below
         except KeyError:
@@ -147,7 +155,9 @@ class Geometry:
          
         #Get the energy/gradient from QChem
         tic = time.perf_counter()
-        xyz = self.get_geometry_at(tuple(x))
+        prev_xyz = getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
+        prev_x = tuple(self.xcur)
+        xyz = self.get_geometry_at(tuple(roundx))
         toc = time.perf_counter()
         self.coord_runtime += toc-tic
 
@@ -160,10 +170,18 @@ class Geometry:
         toc = time.perf_counter()
         self.qchem_runtime += toc-tic
 
-
         # if the job succeeds, proceed normally
         if grad is not None and E is not None:
             E -= self.samp_obj.e_elect  # All in Hartree
+            if E > 1.:
+                print("Energy is:", E)
+                print("Errors in coordinate transformations:")
+                print("Previous:", prev_x, "\n",
+                    prev_xyz, "\n"
+                    "Current:", tuple(x), "\n",
+                    xyz)
+                self.hard_reset()
+                return self.get_energy_grad_at(x,which=which)
 
             B = self.internal.B_prim
             Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
@@ -171,22 +189,31 @@ class Geometry:
             grad = Bt_inv.dot(grad)[self.torsion_inds]
             grad *= self.signs  # In Hartree per rad
 
+            E += ((x-roundx)*grad).sum()
+
             log_trajectory(self.traj_log,x,E,grad)
-            #subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=self.path,
-            #    file_name=file_name)], shell=True)
+            subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=self.path,
+                file_name=file_name)], shell=True)
             self.Ecur = E
             self.gradcur = grad
             # Set the energy/gradient in memory and return
-            self.dict[tuple(2*np.around(x/2,2))] = (E, grad)
+            self.dict[tuple(roundx)] = (E, grad)
         # or else reset internals and try again
         else:
+            if E is not None:
+                print("Energy is", E)
+            print("Errors in coordinate transformations:")
+            print("Previous:", prev_x, "\n",
+                    prev_xyz, "\n"
+                    "Current:", tuple(x), "\n",
+                    xyz)
             self.hard_reset()
             return self.get_energy_grad_at(x,which=which)
             
         self.count += 1
-        if self.count > 100:
+        if (self.count % 100) == 0:
             self.reset()
-        elif self.count > 6000:
+        elif (self.count % 200) == 0:
             self.hard_reset()
         if which == "energy":
             return E

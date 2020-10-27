@@ -38,16 +38,22 @@ def main():
     project_directory = os.path.abspath(os.path.dirname(args.file))
     with open(os.path.join(project_directory,pkl), 'rb') as pklfile:
         pkl_dict = pickle.load(pklfile)
-    samp_obj = SamplingJob(
-            input_file='/Users/lancebettinson/Documents/entropy/um-vt/EtOH/EtOH_hf.out',
-            label='EtOH_hf',
-            ncpus=4, output_directory=os.path.expandvars('$SCRATCH'),
-            protocol='TNUTS',
-            level_of_theory='HF', basis='sto-3g', thresh=0.5)
+    #samp_obj = SamplingJob(
+    #        input_file='/Users/lancebettinson/Documents/entropy/um-vt/EtOH/EtOH_hf.out',
+    #        label='EtOH_hf',
+    #        ncpus=4, output_directory=os.path.expandvars('$SCRATCH'),
+    #        protocol='TNUTS',
+    #        level_of_theory='HF', basis='sto-3g', thresh=0.5)
     print(pkl_dict)
-    pkl_dict['T'] = 400
-    LogP, Z, modes = generate_umvt_logprior(samp_obj,pkl_dict['T'])
-    print(Z,'versus',pkl_dict['trace']['a'])
+    samp_obj = pkl_dict['samp_obj']
+    T = pkl_dict['T']
+    try:
+        LogP, Z, modes = generate_umvt_logprior(samp_obj,pkl_dict['T'])
+        print(Z,'versus',Z*np.mean(pkl_dict['trace']['a']))
+    except FileNotFoundError:
+        Z = pkl_dict['Z']
+        Q = pkl_dict['Q']
+        print(Z,"versus",Q)
     plot_MC_torsion_result(pkl_dict['trace'],modes,pkl_dict['T'])
     
 
