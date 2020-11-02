@@ -29,14 +29,15 @@ class Geometry:
         # Output energy/grad file
         self.dict = {}
 
-        # Number of dihedrals
-        scans = [samp_obj.rotors_dict[n+1]['scan']\
+        # Number of dihedrals and reference (equilibrium) dihedrals
+        self.scans = [np.array(samp_obj.rotors_dict[n+1]['scan'])\
                 for n in range(self.n_rotors)]
         scan_indices = internal.B_indices[-self.n_rotors:]
+        self.dihedrals0 = np.array([self.internal.calc_dihedral(self.internal0.c3d, self.scans[i]-1) for i in range(self.n_rotors)])
 
         # Indices of dihedrals in B matrix
         self.torsion_inds = [len(internal.B_indices) - self.n_rotors +\
-                scan_indices.index([ind-1 for ind in scan]) for scan in scans]
+                scan_indices.index([ind-1 for ind in scan]) for scan in self.scans]
         B = internal.B
         Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
         nrow = B.shape[0]
@@ -49,6 +50,10 @@ class Geometry:
                 self.qk[ind] *= -1
                 self.signs[i] *= -1
         self.symmetry_numbers = np.atleast_1d(syms)
+        self.L = 2*np.pi/self.symmetry_numbers
+        self.center_mod = lambda x: \
+                ((x.transpose() % self.L) \
+                - self.L*((x.transpose() % self.L) // ((self.L)/2))).transpose()
 
         # Bookkeeping
         if not os.path.exists(samp_obj.output_directory):
@@ -93,21 +98,42 @@ class Geometry:
     def hard_reset(self):
         self.reset()
         self.clear_dict()
-        #self.count = 0
 
     def clear_dict(self):
         self.dict = {}
+
+    def check_dihedral(self, target):
+        dihedrals = np.array([self.internal.calc_dihedral(self.internal.c3d, self.scans[i]-1) for i in range(self.n_rotors)])
+        net = self.center_mod(dihedrals - self.dihedrals0)
+        self.xcur = net
+        err = self.center_mod(net - target)
+        return net, err
+
+    def transform_geometry_to(self, x, incr_step=np.pi/12, err_thresh=1e-5, cart_rms_thresh=1E-9):
+        step = np.zeros(len(self.qk))
+        tic = time.perf_counter()
+        cur_dihedral, error = self.check_dihedral(x)
+        while (np.abs(error) > err_thresh).any():
+            for err,ind in zip(error,self.torsion_inds):
+                step[ind] = self.qk[ind]*min(np.abs(err), np.abs(incr_step))*np.sign(err)
+            try:
+                self.internal.transform_int_step(step, cart_rms_thresh=cart_rms_thresh)
+            except:
+                self.hard_reset()
+                return self.transform_geometry_to(x)
+            cur_dihedral, error = self.check_dihedral(x)
+        toc = time.perf_counter()
+        print("CONVERGED", 'Time:', toc-tic, "seconds")
+        return getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
 
     def get_geometry_at(self, x):
         """
         Δx = x - xi
         """
         x = np.atleast_1d(x)
-        #if (x > 2*np.pi).any() or (x < -np.pi).any():
-        #    x %= 2*np.pi/self.symmetry_numbers
         delta_x = x - self.xcur
-        if (delta_x > np.pi/36).any():
-            x %= 2*np.pi/self.symmetry_numbers
+        #if (delta_x > np.pi/36).any():
+        #    x %= 2*np.pi/self.symmetry_numbers
         step = np.zeros(len(self.qk))
         for i,ind in enumerate(self.torsion_inds):
             step[ind] = self.qk[ind] * delta_x[i]
@@ -127,10 +153,8 @@ class Geometry:
                 return evolve_dihedral_by(dq, internal)
 
         xyz = transform_geom(step, self.internal, np.pi/36)
-
-        if xyz is not self.geom:
-            self.geom = xyz
-        
+        #if xyz is not self.geom:
+        #    self.geom = xyz
         self.xcur = x
         return getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
 
@@ -138,14 +162,14 @@ class Geometry:
         """
         Returns E, gradient. Stores both values to dict with positional key.
         """
-        roundx = 2*np.around(x/2,2)
+        #roundx = 2*np.around(x/2,2)
         try:
         # IF the gradient or energy has already been calculated for the position,
         # find the desired value and return it immediately
-            egrad = self.dict[tuple(roundx)]
+            egrad = self.dict[tuple(x)]
             if which == "energy":
                 log_trajectory(self.traj_log,x,egrad[0],egrad[1])
-                return egrad[0] + ((x-roundx)*egrad[1]).sum()
+                return egrad[0]
             else:
                 self.clear_dict()
                 return egrad[1]
@@ -157,7 +181,9 @@ class Geometry:
         tic = time.perf_counter()
         prev_xyz = getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
         prev_x = tuple(self.xcur)
-        xyz = self.get_geometry_at(tuple(roundx))
+        #xyz = self.get_geometry_at(tuple(roundx))
+        #xyz = self.get_geometry_at(x)
+        xyz = self.transform_geometry_to(x)
         toc = time.perf_counter()
         self.coord_runtime += toc-tic
 
@@ -189,7 +215,7 @@ class Geometry:
             grad = Bt_inv.dot(grad)[self.torsion_inds]
             grad *= self.signs  # In Hartree per rad
 
-            E += ((x-roundx)*grad).sum()
+            #E += ((x-roundx)*grad).sum()
 
             log_trajectory(self.traj_log,x,E,grad)
             subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=self.path,
@@ -197,7 +223,7 @@ class Geometry:
             self.Ecur = E
             self.gradcur = grad
             # Set the energy/gradient in memory and return
-            self.dict[tuple(roundx)] = (E, grad)
+            self.dict[tuple(x)] = (E, grad)
         # or else reset internals and try again
         else:
             if E is not None:

@@ -33,59 +33,36 @@ def NUTS_run(samp_obj,T,
     print(Is)
     #Is *= (constants.amu*(10**-20))
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
-    #energy_fn = Energy(get_energy_at, samp_obj, syms, grad_fn=get_grad_at)
     energy_fn = Energy(geom)
     n_d = len(modes)
-    #x = np.linspace(-np.pi,np.pi,150)
-    #fns = np.array([np.exp(-beta*mode.get_spline_fn()(x)) for mode in modes])
-    #totalfns = np.ones(len(fns[0]))
-    #for fn in fns:
-    #    totalfns *= fn
-    #print(totalfns)
-    #lk = []
-    #for i in range(1,len(fns[0])):
-    #    lk.append(totalfns[i]/totalfns[i-1])
-    #print(lk)
-    #print(np.mean(np.array(lk)))
-    resolution = 5  #degrees
+    resolution = 4.20  #degrees
     step_scale = resolution*(np.pi/180) / (1/n_d)**(0.25)
     print("Step scale is",step_scale)
     if not hpc:
         with pm.Model() as model:
-            #xi = pm.DensityDist('xi', logp, shape=n_d)
             #x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.uniform(-1,1,n_d)*np.pi)
             x = pm.DensityDist('x', logp, shape=n_d)
-            #xmod = pm.Deterministic('xmod', x%(2*np.pi/syms))
-            #Etrial = pm.Deterministic('Etrial', -logp(x)+\
-            #        (np.random.rand()-0.5)/50)   # For computational ease
-            #Eprior = pm.Deterministic('Eprior', -logp(x))
-            #DeltaE = pm.Deterministic('DeltaE', Etrial-Eprior)
             DeltaE = (-logp(x)+(np.random.rand()-0.5)/500) -\
                     (-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
         with model:
-            #step = [pm.NUTS(x), pm.Metropolis(xi)]
             #step = pm.NUTS(target_accept=0.50, step_scale=0.15, adapt_step_size=False)
-            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=4,
+            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=6,
                     max_treedepth=7, adapt_step_size=False)
             #step = pm.NUTS(target_accept=0.6, early_max_treedepth=5, max_treedepth=7)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=ncpus, discard_tuned_samples=False)
     else:
         with pm.Model() as model:
-            #xi = pm.DensityDist('xi', logp, shape=n_d)
             x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
-            #Etrial = pm.Deterministic('Etrial', beta*energy_fn(x))
-            #Eprior = pm.Deterministic('Eprior', -logp(x))
             DeltaE = (beta*energy_fn(x))-\
                     (-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
         with model:
-            #step = [pm.NUTS(x), pm.Metropolis(xi)]
             #step = pm.NUTS(target_accept=0.5)
-            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=4,
+            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=6,
                     max_treedepth=6, adapt_step_size=False)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=1, discard_tuned_samples=False)
