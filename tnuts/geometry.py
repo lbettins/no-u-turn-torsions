@@ -20,6 +20,7 @@ class Geometry:
         self.internal0 = copy.deepcopy(samp_obj.torsion_internal)
         self.geom0 = copy.deepcopy(self.internal0.cart_coords)
 
+        self.prev_internal = copy.deepcopy(self.internal0)
         self.internal = internal
         self.geom = self.internal.cart_coords
 
@@ -49,6 +50,7 @@ class Geometry:
             if internal.prim_coords[ind] > 0:
                 self.qk[ind] *= -1
                 self.signs[i] *= -1
+        print("Qks are",self.qk)
         self.symmetry_numbers = np.atleast_1d(syms)
         self.L = 2*np.pi/self.symmetry_numbers
         self.center_mod = lambda x: \
@@ -104,15 +106,20 @@ class Geometry:
 
     def check_dihedral(self, target):
         dihedrals = np.array([self.internal.calc_dihedral(self.internal.c3d, self.scans[i]-1) for i in range(self.n_rotors)])
+        
         net = self.center_mod(dihedrals - self.dihedrals0)
         self.xcur = net
-        err = self.center_mod(net - target)
+        err = -self.signs*np.around(net - target, 5)
         return net, err
 
-    def transform_geometry_to(self, x, incr_step=np.pi/12, err_thresh=1e-5, cart_rms_thresh=1E-9):
+    def transform_geometry_to(self, x,
+            incr_step=np.pi/12, err_thresh=1e-5, cart_rms_thresh=1E-9,
+            prev_fail=False):
         step = np.zeros(len(self.qk))
         tic = time.perf_counter()
         cur_dihedral, error = self.check_dihedral(x)
+        MAXCOUNT = 3*(np.pi // incr_step)
+        count = 0
         while (np.abs(error) > err_thresh).any():
             for err,ind in zip(error,self.torsion_inds):
                 step[ind] = self.qk[ind]*min(np.abs(err), np.abs(incr_step))*np.sign(err)
@@ -120,42 +127,19 @@ class Geometry:
                 self.internal.transform_int_step(step, cart_rms_thresh=cart_rms_thresh)
             except:
                 self.hard_reset()
-                return self.transform_geometry_to(x)
+                if prev_fail:
+                    return getXYZ(self.samp_obj.symbols, self.prev_internal.cart_coords)
+                return self.transform_geometry_to(x,prev_fail=True)
             cur_dihedral, error = self.check_dihedral(x)
+            count += 1
+            if count > MAXCOUNT:    # not ideal
+                print("ERROR in convergence; max n iterations reached")
+                print("Current position:",self.xcur)
+                print(getXYZ(self.samp_obj.symbols, self.prev_internal.cart_coords))
+                return getXYZ(self.samp_obj.symbols, self.prev_internal.cart_coords)
         toc = time.perf_counter()
-        print("CONVERGED", 'Time:', toc-tic, "seconds")
-        return getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
-
-    def get_geometry_at(self, x):
-        """
-        Δx = x - xi
-        """
-        x = np.atleast_1d(x)
-        delta_x = x - self.xcur
-        #if (delta_x > np.pi/36).any():
-        #    x %= 2*np.pi/self.symmetry_numbers
-        step = np.zeros(len(self.qk))
-        for i,ind in enumerate(self.torsion_inds):
-            step[ind] = self.qk[ind] * delta_x[i]
-
-        def transform_geom(dq, internal, max_step=np.pi/36):
-            """
-            Internal coordinate transformation needs to be incremental
-            """
-            step_wide = np.array([-1 if dq_i > max_step else 1 if dq_i < -max_step\
-                else 0 for dq_i in dq])
-            if step_wide.any():
-                ddq = max_step*step_wide
-                #print((dq+ddq)[-self.n_rotors:])
-                evolve_dihedral_by(ddq, internal, cart_rms_thresh=1e-15)
-                return transform_geom(dq+ddq, internal)
-            else:
-                return evolve_dihedral_by(dq, internal)
-
-        xyz = transform_geom(step, self.internal, np.pi/36)
-        #if xyz is not self.geom:
-        #    self.geom = xyz
-        self.xcur = x
+        print("CONVERGED", 'Time:', toc-tic, "seconds with", count, "iterations.")
+        self.prev_internal = copy.deepcopy(self.internal)
         return getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
 
     def get_energy_grad_at(self, x, which="energy"):
@@ -213,10 +197,17 @@ class Geometry:
             Bt_inv = np.linalg.pinv(B.dot(B.T)).dot(B)
     
             grad = Bt_inv.dot(grad)[self.torsion_inds]
-            grad *= self.signs  # In Hartree per rad
+            #signs = np.ones(self.n_rotors)
+            #for i,ind in enumerate(self.torsion_inds):
+            #    if self.internal.prim_coords[ind] > 0:
+            #        signs[i] *= -1
+            #if not (self.signs == signs).all():
+            #    print(self.signs,signs)
+            #grad *= signs
 
+            #grad *= self.signs  # In Hartree per rad
+            #grad *= -1
             #E += ((x-roundx)*grad).sum()
-
             log_trajectory(self.traj_log,x,E,grad)
             subprocess.Popen(['rm {input_path}/{file_name}.q.out'.format(input_path=self.path,
                 file_name=file_name)], shell=True)

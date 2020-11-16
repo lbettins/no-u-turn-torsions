@@ -29,15 +29,15 @@ def NUTS_run(samp_obj,T,
     logpE = lambda E: -E    # E must be dimensionless
     logp, Z, modes = generate_umvt_logprior(samp_obj, T)
     syms = np.array([mode.get_symmetry_number() for mode in modes])
+    np.random.seed(42)
     Is = np.array([mode.get_I() for mode in modes])
-    print(Is)
-    #Is *= (constants.amu*(10**-20))
+    Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in modes])
+    variances = get_initial_mass_matrix(modes, T)
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
-    energy_fn = Energy(geom)
+    energy_fn = Energy(geom, beta)
     n_d = len(modes)
-    resolution = 4.20  #degrees
+    resolution = 5.0  #degrees
     step_scale = resolution*(np.pi/180) / (1/n_d)**(0.25)
-    print("Step scale is",step_scale)
     if not hpc:
         with pm.Model() as model:
             #x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.uniform(-1,1,n_d)*np.pi)
@@ -47,23 +47,34 @@ def NUTS_run(samp_obj,T,
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
         with model:
-            #step = pm.NUTS(target_accept=0.50, step_scale=0.15, adapt_step_size=False)
-            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=6,
+            step = pm.NUTS(target_accept=0.9, step_scale=step_scale, early_max_treedepth=6,
                     max_treedepth=7, adapt_step_size=False)
-            #step = pm.NUTS(target_accept=0.6, early_max_treedepth=5, max_treedepth=7)
+            step = pm.NUTS(scaling=1/Ks, is_cov=True,
+                    step_scale=step_scale, early_max_treedepth=6,
+                    max_treedepth=6, adapt_step_size=True)
+            step = pm.NUTS(target_accept=0.65, scaling=variances, is_cov=True,
+                    step_scale=step_scale, early_max_treedepth=6,
+                    max_treedepth=6, adapt_step_size=False)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=ncpus, discard_tuned_samples=False)
     else:
         with pm.Model() as model:
-            x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
-            DeltaE = (beta*energy_fn(x))-\
-                    (-logp(x))
+            #x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
+            x = pm.DensityDist('x', logp, shape=n_d, testval=np.zeros(n_d))
+            bE = pm.Deterministic('bE', energy_fn(x))
+            DeltaE = (bE)-(-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
             E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
         with model:
-            #step = pm.NUTS(target_accept=0.5)
-            step = pm.NUTS(target_accept=0.7, step_scale=step_scale, early_max_treedepth=6,
-                    max_treedepth=6, adapt_step_size=False)
+            #step = pm.NUTS(target_accept=0.7, scaling=1/Ks, is_cov=True,
+            #        step_scale=step_scale, early_max_treedepth=6,
+            #        max_treedepth=6, adapt_step_size=False)
+            step = pm.NUTS(target_accept=0.35, scaling=variances, is_cov=True,
+                    step_scale=step_scale, early_max_treedepth=4,
+                    max_treedepth=5, adapt_step_size=True)
+            step = pm.NUTS(target_accept=0.65, scaling=variances, is_cov=True,
+                    step_scale=step_scale, early_max_treedepth=4,
+                    max_treedepth=5, adapt_step_size=True)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=1, discard_tuned_samples=False)
     Q = Z*np.mean(trace.a)
@@ -79,11 +90,31 @@ def NUTS_run(samp_obj,T,
         pkl_kwargs['n'] = n
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'))
-    if not hpc:
+    if True:
         plot_MC_torsion_result(trace,modes,T)
         print("Prior partition function:\t", Z)
         print("Posterior partition function:\t", np.mean(trace.a)*Z)
         print("Expected likelihood:\t", np.mean(trace.a))
+        print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
+        print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
+
+def get_initial_mass_matrix(modes, T):
+    from scipy.integrate import quad
+    import rmgpy.constants as constants
+    fns = np.array([mode.get_spline_fn() for mode in modes])
+    sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
+    beta = 1/(constants.kB*T)*constants.E_h
+    Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in modes])
+    variances = []
+    Zs = []
+    for fn,s in zip(fns,sym_nums):
+        Z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
+        var = np.power(Z,-1)*quad(lambda y: np.power(y,2)*np.exp(-beta*fn(y)), -np.pi/s, np.pi/s)[0] -\
+                np.power(1/Z*quad(lambda y: y*np.exp(-beta*fn(y)), -np.pi/s, np.pi/s)[0],2)
+        Zs.append(Z)
+        variances.append(var)
+    print(variances, 1/Ks)
+    return np.array(variances)
 
 def generate_umvt_logprior(samp_obj, T):
     from tnuts.ops import LogPrior
@@ -96,8 +127,9 @@ def generate_umvt_logprior(samp_obj, T):
     energy_array = [mode.get_spline_fn() for mode in modes]
     # Get the symmetry numbers for each 1D torsion
     sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
-    Z = np.array([quad(lambda x: fn(x), -np.pi/s, np.pi/s)[0]\
-            for fn,s in zip(energy_array,sym_nums)]).sum()
+    beta = 1/(constants.kB*T)*constants.E_h
+    Z = np.array([quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]\
+            for fn,s in zip(energy_array,sym_nums)]).prod()
 
     # Return theano op LogPrior and partition function
     return LogPrior(energy_array, T, sym_nums), Z, modes
@@ -128,7 +160,6 @@ def plot_MC_torsion_result(trace, NModes, T=300):
                                 for sym,xi in zip(syms,x)]) for x in xsamples[0]])
         #print(xsamples)
         samples=np.vstack(xsamples)
-        #samples=np.vstack(trace['xmod'])
         figure = corner.corner(samples, 
                 labels=["$x_{{{0}}}$".format(i) for i in range(1, n_d+1)],
                 hist_kwargs=hist_kwargs)
