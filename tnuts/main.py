@@ -29,9 +29,8 @@ def NUTS_run(samp_obj,T,
     logpE = lambda E: -E    # E must be dimensionless
     logp, Z, modes = generate_umvt_logprior(samp_obj, T)
     syms = np.array([mode.get_symmetry_number() for mode in modes])
-    np.random.seed(42)
     Is = np.array([mode.get_I() for mode in modes])
-    Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in modes])
+    #Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in modes])
     variances = get_initial_mass_matrix(modes, T)
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     energy_fn = Energy(geom, beta)
@@ -69,10 +68,7 @@ def NUTS_run(samp_obj,T,
             #step = pm.NUTS(target_accept=0.7, scaling=1/Ks, is_cov=True,
             #        step_scale=step_scale, early_max_treedepth=6,
             #        max_treedepth=6, adapt_step_size=False)
-            step = pm.NUTS(target_accept=0.35, scaling=variances, is_cov=True,
-                    step_scale=step_scale, early_max_treedepth=4,
-                    max_treedepth=5, adapt_step_size=True)
-            step = pm.NUTS(target_accept=0.65, scaling=variances, is_cov=True,
+            step = pm.NUTS(target_accept=0.5, scaling=variances, is_cov=True,
                     step_scale=step_scale, early_max_treedepth=4,
                     max_treedepth=5, adapt_step_size=True)
             trace = pm.sample(nsamples, tune=tune, step=step, 
@@ -82,15 +78,17 @@ def NUTS_run(samp_obj,T,
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
             'geom_obj' : geom}
-    pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{n}.p'
+    pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}.p'
     n = 0
-    pkl_kwargs = dict(label=samp_obj.label, nc=nchains, nburn=tune, ns=nsamples, T=T, n=n)
+    pkl_kwargs = dict(label=samp_obj.label, nc=nchains,
+            nburn=tune, ns=nsamples, T=T,
+            t_a=0.5, n=n)
     while os.path.exists(os.path.join(samp_obj.output_directory, pkl_file.format(**pkl_kwargs))):
         n += 1
         pkl_kwargs['n'] = n
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'))
-    if True:
+    if not hpc:
         plot_MC_torsion_result(trace,modes,T)
         print("Prior partition function:\t", Z)
         print("Posterior partition function:\t", np.mean(trace.a)*Z)
@@ -104,7 +102,6 @@ def get_initial_mass_matrix(modes, T):
     fns = np.array([mode.get_spline_fn() for mode in modes])
     sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
     beta = 1/(constants.kB*T)*constants.E_h
-    Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in modes])
     variances = []
     Zs = []
     for fn,s in zip(fns,sym_nums):
@@ -113,7 +110,6 @@ def get_initial_mass_matrix(modes, T):
                 np.power(1/Z*quad(lambda y: y*np.exp(-beta*fn(y)), -np.pi/s, np.pi/s)[0],2)
         Zs.append(Z)
         variances.append(var)
-    print(variances, 1/Ks)
     return np.array(variances)
 
 def generate_umvt_logprior(samp_obj, T):
