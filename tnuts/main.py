@@ -48,9 +48,6 @@ def NUTS_run(samp_obj,T,
         with model:
             step = pm.NUTS(target_accept=0.9, step_scale=step_scale, early_max_treedepth=6,
                     max_treedepth=7, adapt_step_size=False)
-            step = pm.NUTS(scaling=1/Ks, is_cov=True,
-                    step_scale=step_scale, early_max_treedepth=6,
-                    max_treedepth=6, adapt_step_size=True)
             step = pm.NUTS(target_accept=0.65, scaling=variances, is_cov=True,
                     step_scale=step_scale, early_max_treedepth=6,
                     max_treedepth=6, adapt_step_size=False)
@@ -88,16 +85,19 @@ def NUTS_run(samp_obj,T,
         n += 1
         pkl_kwargs['n'] = n
     pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'))
+            open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'),
+            protocol=4)
     pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,trace_file.format(**pkl_kwargs)),'wb'))
+            open(os.path.join(samp_obj.output_directory,trace_file.format(**pkl_kwargs)),'wb'),
+            protocol=4)
     if not hpc:
         plot_MC_torsion_result(trace,modes,T)
-        print("Prior partition function:\t", Z)
-        print("Posterior partition function:\t", np.mean(trace.a)*Z)
-        print("Expected likelihood:\t", np.mean(trace.a))
-        print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
-        print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
+    print("Prior partition function:\t", Z)
+    print("Posterior partition function:\t", np.mean(trace.a)*Z)
+    print("Expected likelihood:\t", np.mean(trace.a))
+    print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
+    print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
+    print(model_dict)
 
 def get_initial_mass_matrix(modes, T):
     from scipy.integrate import quad
