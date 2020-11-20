@@ -138,7 +138,7 @@ class Geometry:
                 print(getXYZ(self.samp_obj.symbols, self.prev_internal.cart_coords))
                 return getXYZ(self.samp_obj.symbols, self.prev_internal.cart_coords)
         toc = time.perf_counter()
-        print("CONVERGED", 'Time:', toc-tic, "seconds with", count, "iterations.")
+        #print("CONVERGED", 'Time:', toc-tic, "seconds with", count, "iterations.")
         self.prev_internal = copy.deepcopy(self.internal)
         return getXYZ(self.samp_obj.symbols, self.internal.cart_coords)
 

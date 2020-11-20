@@ -68,7 +68,7 @@ def NUTS_run(samp_obj,T,
             #step = pm.NUTS(target_accept=0.7, scaling=1/Ks, is_cov=True,
             #        step_scale=step_scale, early_max_treedepth=6,
             #        max_treedepth=6, adapt_step_size=False)
-            step = pm.NUTS(target_accept=0.5, scaling=variances, is_cov=True,
+            step = pm.NUTS(target_accept=0.75, scaling=variances, is_cov=True,
                     step_scale=step_scale, early_max_treedepth=4,
                     max_treedepth=5, adapt_step_size=True)
             trace = pm.sample(nsamples, tune=tune, step=step, 
@@ -79,6 +79,7 @@ def NUTS_run(samp_obj,T,
             'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
             'geom_obj' : geom}
     pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}.p'
+    trace_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}_trace.p'
     n = 0
     pkl_kwargs = dict(label=samp_obj.label, nc=nchains,
             nburn=tune, ns=nsamples, T=T,
@@ -88,6 +89,8 @@ def NUTS_run(samp_obj,T,
         pkl_kwargs['n'] = n
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'))
+    pickle.dump(model_dict,
+            open(os.path.join(samp_obj.output_directory,trace_file.format(**pkl_kwargs)),'wb'))
     if not hpc:
         plot_MC_torsion_result(trace,modes,T)
         print("Prior partition function:\t", Z)
