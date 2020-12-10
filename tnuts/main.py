@@ -70,11 +70,12 @@ def NUTS_run(samp_obj,T,
                     max_treedepth=5, adapt_step_size=True)
             trace = pm.sample(nsamples, tune=tune, step=step, 
                     chains=nchains, cores=1, discard_tuned_samples=False)
+    #thermo_obj = MCThermo(trace, Z, T)
     Q = Z*np.mean(trace.a)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
-            'geom_obj' : geom}
+            'geom_obj' : geom, 'modes' : modes}
     pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}.p'
     trace_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}_trace.p'
     n = 0
@@ -84,20 +85,20 @@ def NUTS_run(samp_obj,T,
     while os.path.exists(os.path.join(samp_obj.output_directory, pkl_file.format(**pkl_kwargs))):
         n += 1
         pkl_kwargs['n'] = n
-    pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'),
-            protocol=4)
+    #pickle.dump(model_dict,
+    #        open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'),
+    #        protocol=4)
     pickle.dump(model_dict,
             open(os.path.join(samp_obj.output_directory,trace_file.format(**pkl_kwargs)),'wb'),
             protocol=4)
     if not hpc:
         plot_MC_torsion_result(trace,modes,T)
-    print("Prior partition function:\t", Z)
-    print("Posterior partition function:\t", np.mean(trace.a)*Z)
-    print("Expected likelihood:\t", np.mean(trace.a))
-    print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
-    print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
-    print(model_dict)
+        print("Prior partition function:\t", Z)
+        print("Posterior partition function:\t", np.mean(trace.a)*Z)
+        print("Expected likelihood:\t", np.mean(trace.a))
+        print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
+        print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
+        print(model_dict)
 
 def get_initial_mass_matrix(modes, T):
     from scipy.integrate import quad
@@ -133,23 +134,28 @@ def generate_umvt_logprior(samp_obj, T):
     # Return theano op LogPrior and partition function
     return LogPrior(energy_array, T, sym_nums), Z, modes
     
-def plot_MC_torsion_result(trace, NModes, T=300):
+def plot_MC_torsion_result(trace, NModes=None, T=300):
     import matplotlib.pyplot as plt
     import matplotlib as mpl
     mpl.use('MacOSX')
     beta = 1/(constants.kB*T)*constants.E_h
-    n_d = len(NModes)
-    logpriors = [mode.get_spline_fn() for mode in NModes]
-    syms = np.array([mode.get_symmetry_number() for mode in NModes])
-    xvals = [np.linspace(-np.pi/sig, np.pi/sig, 500) for sig in syms]
-    yvals = [np.exp(-beta*V(xvals[i]))/quad(lambda x: np.exp(-beta*V(x)),
-        -np.pi/sig,np.pi/sig)[0]\
-            for i,V,sig in zip(range(n_d),logpriors,syms)]
-    for i in range(n_d):
-        print("Symmetry values for mode",i,"is",syms[i])
-        plt.figure(2)
-        fullx = np.linspace(-np.pi,np.pi,500)
-        plt.plot(fullx, logpriors[i](fullx))
+    if NModes is not None:
+        n_d = len(NModes)
+        logpriors = [mode.get_spline_fn() for mode in NModes]
+        syms = np.array([mode.get_symmetry_number() for mode in NModes])
+        xvals = [np.linspace(-np.pi/sig, np.pi/sig, 500) for sig in syms]
+        yvals = [np.exp(-beta*V(xvals[i]))/quad(lambda x: np.exp(-beta*V(x)),
+            -np.pi/sig,np.pi/sig)[0]\
+                for i,V,sig in zip(range(n_d),logpriors,syms)]
+        for i in range(n_d):
+            print("Symmetry values for mode",i,"is",syms[i])
+            plt.figure(2)
+            fullx = np.linspace(-np.pi,np.pi,500)
+            plt.plot(fullx, logpriors[i](fullx))
+    else:
+        n_d = len(trace.x[0])
+        logpriors = None
+        syms = np.ones(n_d)
     if n_d >= 2:
         import corner
         hist_kwargs = dict(density=True)
@@ -166,9 +172,10 @@ def plot_MC_torsion_result(trace, NModes, T=300):
         # Extract the axes
         axes = np.array(figure.axes).reshape((n_d, n_d))
         # Loop over the diagonal
-        for i in range(n_d):
-            ax = axes[i, i]
-            ax.plot(xvals[i],yvals[i], color="b")
+        if NModes is not None:
+            for i in range(n_d):
+                ax = axes[i, i]
+                ax.plot(xvals[i],yvals[i], color="b")
     plt.show()
 
 if __name__=='__main__':
