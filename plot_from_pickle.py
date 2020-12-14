@@ -53,6 +53,7 @@ def main():
     except FileNotFoundError:
         Z = pkl_dict['Z']
         Q = pkl_dict['Q']
+        modes = None    # No modes, just plot the histogram
         print(Z,"versus",Q)
     plot_MC_torsion_result(pkl_dict['trace'],modes,pkl_dict['T'])
     
@@ -76,4 +77,26 @@ def generate_umvt_logprior(samp_obj, T):
     return LogPrior(energy_array, T, sym_nums), Z, modes
     
 if __name__=='__main__':
+    args = parse_command_line_arguments()
+    pkl = args.file.split('/')[-1]
+    project_directory = os.path.abspath(os.path.dirname(args.file))
+    with open(os.path.join(project_directory,pkl), 'rb') as pklfile:
+        pkl_dict = pickle.load(pklfile)
+    trace = pkl_dict['trace']
+    model = pkl_dict['model']
+
+    # Loop over samples and convert to the relevant parameter space;
+    # I'm sure that there's an easier way to do this, but I don't know
+    # how to make something work in general...
+    samples = np.empty((len(trace) * trace.nchains, model.ndim))
+    i = 0
+    for chain in trace._straces.values():
+        for p in chain:
+            samples[i] = model.bijection.map(p)
+            i += 1
+    # Compute the sample covariance
+    cov = np.cov(samples, rowvar=0)
+    print("Covariance:")
+    print(cov)
+
     main()
