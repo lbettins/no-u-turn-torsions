@@ -57,6 +57,18 @@ class NMode:
         self.k = k      #[1/s^2]
         if self.I and self.mu:
             raise ValueError("I and mu exist simultaneously!")
+        self.z = None   #partition function contribution for this mode
+
+    def get_classical_partition_fn(self,T):
+        if not self.sigma or not self.v_sample:
+            raise ValueError("No symmetry number or energy samples")
+        if not self.isTors:
+            raise ValueError("Can only calculate for torsions")
+        beta = 1/(constants.kB*T)*constants.E_h
+        fn = mode.get_spline_fn()
+        s = mode.get_symmetry_number()
+        self.z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
+        return self.z
 
     def set_mode_number(self,n):
         if self.n and type(self.n) is int:
@@ -572,17 +584,24 @@ def dict_to_NMode(mode, m_dict, e_dict, xyz_dict,
     return new_mode
 
 def dicts_to_NModes(m_dict, e_dict, xyz_dict,
-        rotors_dict=[], samp_obj=None):
+        rotors_dict=[], samp_obj=None, just_tors=False):
     # Get array of NMode types for easy use in PG, MCHO
     modes = []
+    tmodes = []
     continue_toggle = False
     for mode in sorted(m_dict.keys()):
         if continue_toggle and m_dict[mode]['mode'] == 'tors':
             modes[0].set_mode_number(mode)
             continue
-        modes.append(dict_to_NMode(mode,m_dict,e_dict,xyz_dict,
-            rotors_dict,samp_obj))
+        nmode = dict_to_NMode(mode, m_dict, e_dict, xyz_dict,
+                rotors_dict, samp_obj)
+        modes.append(nmode)
+        if mode['mode'] == 'tors':
+            tmodes.append(nmode)
         if samp_obj.protocol == 'CMT':
             continue_toggle = True   # Only need one NMode object w/vectorized quantities
     samp_obj.NModes = modes
+    samp_obj.tmodes = tmodes
+    if just_tors:
+        return tmodes
     return modes

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -12,19 +13,6 @@ from arkane.statmech import is_linear
 from tnuts.job.job import Job
 from ape.qchem import QChemLog
 from tnuts.qchem import load_gradient
-
-def get_freq(protocol, D=None, Thermo_obj=None, samp_obj=None):
-    if protocol not in ["HO", "UMVT", "MC"]:
-        raise TypeError("Protocol not recognized, pls choose 'HO', 'UMVT', or 'MC'.")
-    if protocol == "HO":
-        return
-    elif protocol == "UMVT":
-        return
-    elif protocol == "MC":
-        # Solve eigenval problem |K - w^2 D| = 0
-        if D is None:
-            raise TypeError("Protocol",protocol,"requires covariance mx D.")
-        return
 
 def evolve_dihedral_by(dq, internal, cart_rms_thresh=1e-15):
     remaining_int_step = dq
@@ -116,7 +104,7 @@ def get_energy_gradient(xyz, path, file_name, ncpus, charge=None, multiplicity=N
     else:
         job = Job(xyz, path, file_name,jobtype='opt', ncpus=ncpus, charge=charge, multiplicity=multiplicity, \
             level_of_theory=level_of_theory, basis=basis, unrestricted=unrestricted)
-    
+
     # Write Q-Chem input file
     job.write_input_file()
 

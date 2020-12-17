@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import os
 import math
 import logging
-
 import rmgpy.constants as constants
 from arkane.output import prettify
-
 from ape.FitPES import from_sampling_result, cubic_spline_interpolations
 from ape.schrodinger import SetAnharmonicH
 from ape.statmech import Statmech
 from ape.thermo import ThermoJob
-
-from tnuts.common import get_freq
+from tnuts.thermo.common import get_tors_freq, solvHO, solvCHO, solvUMClass
 
 class MCThermoJob:
     """
@@ -26,10 +22,11 @@ class MCThermoJob:
         self.conformer = self.samp_obj.conformer
         self.Thermo = ThermoJob(self.samp_obj.label,
                 self.samp_obj.input_file,
-                output_directory=self.samp_obj.output_directory, 
+                output_directory=self.samp_obj.output_directory,
                 P=self.P)
         self.Thermo.load_save()
-        thermo.load_save()
+        self.tmodes = self.samp_obj.tmodes
+        self.NModes = self.samp_obj.NModes
 
     def calcThermo(self, print_HOhf_result=True):
         self.conformer = None
@@ -93,39 +90,50 @@ class MCThermoJob:
             raise TypeError(
                     "Invalid protocol for stretches/bends: valid options\
                             are 'HO' or 'UMVT'.")
-        F, E0divQtclass, DE, DS, DCv = 1, 0, 0, 0, 0
+        Qc, F, E0divQtclass, DE, DS, DCv = 1, 1, 0, 0, 0, 0
         if sb_protocol == "HO":
             if not sb_subprotocol in ["HO", "UMVT", "MC"]:
                 raise TypeError(
                     "Invalid subprotocol for stretches/bends: valid options\
                             are 'HO', 'UMVT', or 'MC'.")
             kwargs = {'samp_obj' : self.samp_obj, 'D' : D, 'Thermo_obj' : self.Thermo}
-            v = get_freq(protocol = sb_subprotocol, **kwargs) # Get freqs (cm-1)
-            v *= 3E10   # 
-            for i in range(ntors):
-                qzpe = np.exp(-beta_si*hbar*v[i]/2)
-                q = qzpe/(1-np.exp(-beta_si*hbar*v[i]))
-                qc = np.power(hbar*v[i]*beta_si, -1)
+            ws = get_tors_freq(protocol = sb_subprotocol, **kwargs) # Get freqs
+            for i,w in enumerate(ws):
+                # Calculate quantum HO properties
+                e0, e, s, q, cv =\
+                        solvHO(w, self.T)
+                ec, sc, cvc, qc =\
+                        solvCHO(w, self.T)
                 F *= q/qc
-                E0divQtclass += 1./qc * (hbar*v[i]/2)
+                Qc *= qc
+                E0divQtclass += e0/qc 
                 DE += e-ec
                 DS += s-sc
                 DCv += cv-cvc
         elif sb_protocol == "UMVT":
-            for mode in tors_modes:
-                # i should reflect mode number
+            for mode in sorted(self.Thermo.mode_dict.keys()):
+                if self.Thermo.mode_dict[mode]['mode'] != 'tors':
+                    continue
+                # Calculate quantum properties
                 v, e0, e, s, f, q, cv =\
                         self.Thermo.SolvEig(mode, self.T)
-                qc = 
+                # Calculate classical properties
+                NMode = dict_to_NMode(mode, self.Thermo.mode_dict,
+                        self.Thermo.energy_dict,
+                        [],
+                        [], self.samp_obj)
+                ec, sc, cvc, qc =\
+                        solvUMClass(NMode, self.T)
                 F *= q/qc
-                E0divQtclass += 1./qc * e0
+                Qc *= qc
+                E0divQtclass += 1./qc*e0
                 DE += e - ec 
                 DS += s - sc
                 DCv += cv - cvc
-        return v, qc, F, E0divQtclass, DE, DS, DCv
-        
-    def calcTThermo(self, protocol="PG", subprotocol="CC",
-            sb_protocol="HO", sb_subprotocol="HO")
+        return v, Qc, F, E0divQtclass, DE, DS, DCv
+
+    def calcTThermo(self, protocol="PG", subprotocol="CC",\
+            sb_protocol="HO", sb_subprotocol="HO"):
         ntors = self.samp_obj.n_rotors
         # NOTE
         # Calc of torsions follows according to supplied protocol:
@@ -141,19 +149,30 @@ class MCThermoJob:
             S = DS + Stclass
             Cv = DCv + Cvtclass
             Q = F*Qtclass
-            return E0, E, S, Cv, Q
         elif protocol == "UMVT":
-            for mode in tors_modes:
-                v, E0, E, S, F, Q, Cv =\
+            E0, E, S, Cv, Q = 0, 0, 0, 0, 1
+            for mode in sorted(self.Thermo.mode_dict.keys()):
+                if self.Thermo.mode_dict[mode]['mode'] != 'tors':
+                    continue
+                v, e0, e, s, f, q, cv =\
                         self.Thermo.SolvEig(mode, self.T)
+                E0 += e0
+                E += e
+                S += s
+                Cv += cv
+                Q *= q
+        return E0, E, S, Cv, Q
 
     def calcSBThermo(self, protocol):
         ZPE, E_int, S_int, Q_int, Cv_int = 0, 0, 0, 1, 0
         if protocol="HO":
+            # Calculate HO thermo for stretches/bends
             pass
         elif protocol="UMVT":
-            # logging.info("Calculate internal E, S")
+            # Calculate UMVT thermo for stretches/bends
             for mode in sorted(self.Thermo.mode_dict.keys()):
+                if self.Thermo.mode_dict[mode]['mode'] == 'tors':  # skip torsions
+                    continue
                 self.result_info.append("\n# \t********** Mode {} **********".format(mode))
                 v, e0, E, S, F, Q, Cv = self.SolvEig(mode, T)
                 ZPE += e0
@@ -164,7 +183,7 @@ class MCThermoJob:
         return ZPE, E_int, S_int, Cv_int, Q_int
 
     def calcTransThermo(self):
-        # Calculate global translation and rotation E, S
+        # Calculate global translation (ideal gas, Sackur-Tetrode)
         E_trans = 1.5 * constants.R * self.T / 4184
         S_trans = self.conformer.modes[0].get_entropy(self.T) / 4.184 - constants.R * math.log(self.P / 101325) / 4.184
         Cv_trans = 1.5 * constants.R / 4184 * 1000
@@ -172,6 +191,7 @@ class MCThermoJob:
         return E_trans, S_trans, Cv_trans, Q_trans
 
     def calcRotThermo(self):
+        # Calculate global rotation (rigid rotor)
         E_rot = self.conformer.modes[1].get_enthalpy(self.T) / 4184
         S_rot = self.conformer.modes[1].get_entropy(self.T) / 4.184
         Cv_rot = self.conformer.modes[1].get_heat_capacity(self.T) / 4.184
@@ -228,27 +248,6 @@ class MCThermoJob:
         Q = Q_trans * Q_rot * Q_int * self.spin_multiplicity * self.optical_isomers
         Cv = Cv_trans + Cv_rot + Cv_int # in cal/mol/K
         return  E0, E, S, F, Q, Cv
-    
-    def calcQMMMThermo(self, T, print_HOhf_result=True):
-        P = self.P
-        conformer = self.conformer
-        logging.info("Calculate internal E, S")
-        ZPE = 0
-        E_int = 0
-        S_int = 0
-        # F_int = 0
-        # Q_int = 1
-        Cv_int = 0
-
-        for mode in sorted(self.mode_dict.keys()):
-            self.result_info.append("\n# \t********** Mode ",mode," **********\n\n")
-            v, e0, E, S, F, Q, Cv = self.SolvEig(mode, T)
-            ZPE += e0
-            E_int += E
-            S_int += S
-            # F_int += F
-            # Q_int *= Q
-            Cv_int += Cv
 
         self.result_info.append("\n# \t********** Final results **********\n#\n")
         self.result_info.append("# Temperature (K): %.2f" % (T))
@@ -267,9 +266,7 @@ class MCThermoJob:
             self.result_info.append("\n# \t********** HOhf results **********\n\n")
             self.result_info.append("# Vibrational energy (kcal/mol): %.10f" % (E_vib))
             self.result_info.append("# Vibrational entropy (cal/mol/K): %.10f" % (S_vib))
-        
         self.result_info.append('\n\n\n')
-
     
     def write_output(self):
         """
