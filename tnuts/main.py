@@ -12,7 +12,7 @@ import theano.tensor as tt
 from scipy.integrate import quad
 from scipy import stats
 from pymc3.distributions import Interpolated
-from tnuts.mc.ops import Energy
+from tnuts.mc.ops import Energy, LogPrior
 from tnuts.mc.metrics import get_step_for_trace, get_initial_mass_matrix
 from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
@@ -126,7 +126,6 @@ def NUTS_run(samp_obj,T,
         print(model_dict)
 
 def generate_umvt_logprior(samp_obj, T):
-    from tnuts.ops import LogPrior
     # Get the torsions from the APE object
     # With APE updates, should edit APE sampling.py to [only] sample torsions
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
