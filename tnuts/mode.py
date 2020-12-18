@@ -596,7 +596,7 @@ def dicts_to_NModes(m_dict, e_dict, xyz_dict,
         nmode = dict_to_NMode(mode, m_dict, e_dict, xyz_dict,
                 rotors_dict, samp_obj)
         modes.append(nmode)
-        if mode['mode'] == 'tors':
+        if m_dict[mode]['mode'] == 'tors':
             tmodes.append(nmode)
         if samp_obj.protocol == 'CMT':
             continue_toggle = True   # Only need one NMode object w/vectorized quantities
