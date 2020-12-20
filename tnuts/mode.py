@@ -65,8 +65,8 @@ class NMode:
         if not self.isTors:
             raise ValueError("Can only calculate for torsions")
         beta = 1/(constants.kB*T)*constants.E_h
-        fn = mode.get_spline_fn()
-        s = mode.get_symmetry_number()
+        fn = self.get_spline_fn()
+        s = self.get_symmetry_number()
         self.z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
         return self.z
 
