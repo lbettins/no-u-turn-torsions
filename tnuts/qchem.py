@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-
 """
 TNUTS QChem module
 Used to parse QChem output files when APE won't do the job
 """
-
 import numpy as np
 import math
 
@@ -12,6 +10,8 @@ def get_level_of_theory(QChemLog):
     lvl_of_theory = None
     basis = None
     lot_kwargs = {}
+    charge = 0
+    spin_multiplicity = 0
     with open(QChemLog.path, 'r') as f:
         line = f.readline()
         while line != '':
