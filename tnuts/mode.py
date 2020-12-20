@@ -1,8 +1,7 @@
-from scipy.interpolate import interp1d
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import interp1d, CubicSpline
 from scipy.signal import argrelextrema
+from scipy.integrate import quad
 import os
-import scipy.integrate as quad
 import numpy as np
 import rmgpy.constants as constants
 import copy
