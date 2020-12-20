@@ -63,7 +63,8 @@ def NUTS_run(samp_obj,T,
             bE = pm.Deterministic('bE', energy_fn(x))
             DeltaE = (bE)-(-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
-            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
+            E_obs = pm.DensityDist('E_obs',
+                    lambda E: logpE(E), observed={'E':DeltaE})
         with model:
             if protocol == 'NUTS':
                 start = None
@@ -83,7 +84,7 @@ def NUTS_run(samp_obj,T,
                     step = get_step_for_trace(burnin_trace, covi=variances,
                             regular_window=0)
                     burnin_trace = pm.sample(
-                        start=start, tune=steps, draws=2, step=step,
+                        cores=1, start=start, tune=steps, draws=2, step=step,
                         compute_convergence_checks=False,
                         discard_tuned_samples=False)
                     start = [t[-1] for t in burnin_trace._straces.values()]
