@@ -77,24 +77,25 @@ def NUTS_run(samp_obj,T,
                         np.floor(np.log2((n_tune - n_burn) / n_start)))
                 n_window = np.append(n_window, n_tune - n_burn - np.sum(n_window))
                 n_window = n_window.astype(int)
-                #nuts_kwargs = dict(target_accept=0.7,
-                #        step_scale=step_scale, early_max_treedepth=6,
-                #        max_treedepth=6, adapt_step_size=True)
+                nuts_kwargs = dict(target_accept=0.7,
+                        step_scale=step_scale, early_max_treedepth=5,
+                        max_treedepth=5, adapt_step_size=True)
                 for steps in n_window:
                     step = get_step_for_trace(burnin_trace, covi=variances,
                             regular_window=0)
                     burnin_trace = pm.sample(
                         cores=1, start=start, tune=steps, draws=2, step=step,
                         compute_convergence_checks=False,
-                        discard_tuned_samples=False)
+                        discard_tuned_samples=False, **nuts_kwargs)
                     start = [t[-1] for t in burnin_trace._straces.values()]
-                step = get_step_for_trace(burnin_trace, regular_window=0)
+                step = get_step_for_trace(burnin_trace,
+                        regular_window=0, **nuts_kwargs)
                 #step = pm.NUTS(target_accept=0.75, scaling=variances, is_cov=True,
                 #        step_scale=step_scale, early_max_treedepth=6,
                 #        max_treedepth=6, adapt_step_size=True)
-            trace = pm.sample(nsamples, tune=tune, step=step,
+            trace = pm.sample(nsamples, tune=0, step=step,
                     chains=nchains, cores=1, start=start,
-                    discard_tuned_samples=False)
+                    **nuts_kwargs)
 
     #thermo_obj = MCThermo(trace, Z, T)
     Q = Z*np.mean(trace.a)
