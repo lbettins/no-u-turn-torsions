@@ -4,6 +4,7 @@ import math
 import logging
 import rmgpy.constants as constants
 import numpy as np
+import pandas as pd
 from arkane.output import prettify
 from ape.FitPES import from_sampling_result, cubic_spline_interpolations
 from ape.schrodinger import SetAnharmonicH
@@ -11,7 +12,8 @@ from ape.statmech import Statmech
 from ape.thermo import ThermoJob
 from tnuts.mode import dict_to_NMode
 from tnuts.thermo.common import get_tors_freqs, solvHO, solvCHO,\
-        solvUMClass, get_mass_matrix
+        solvUMClass, get_mass_matrix, get_data_frame
+from tnuts.mc.metrics import get_sample_cov
 
 class MCThermoJob:
     """
@@ -22,47 +24,82 @@ class MCThermoJob:
     S   [=] cal/mol.K
     Cv  [=] cal/mol.K
     """
-    def __init__(self, trace, T, samp_obj=None, P=101325):
+    def __init__(self, trace, T, samp_obj=None, model=None, P=101325,
+            t_protocols=['PG','UMVT','HO'], t_subprotocols=['CC','UC','UU'],
+            sb_protocols=['HO','UMVT'], sb_subprotocols=['HO','UMVT']):
+        self.model = model
         self.T = T
         self.P = P
         self.trace = trace
         self.samp_obj = samp_obj
         self.conformer = self.samp_obj.conformer
-        self.Thermo = ThermoJob(self.samp_obj.label, self.samp_obj.input_file,
+        self.label = self.samp_obj.label
+        self.Thermo = ThermoJob(self.label, self.samp_obj.input_file,
                 output_directory=self.samp_obj.output_directory, P=self.P)
         self.Thermo.load_save()
         self.tmodes = self.samp_obj.tmodes
         self.NModes = self.samp_obj.NModes
+        self.t_protocols = np.atleast_1d(t_protocols)
+        self.t_subprotocols = np.atleast_1d(t_subprotocols)
+        self.sb_protocols = np.atleast_1d(sb_protocols)
+        self.sb_subprotocols = np.atleast_1d(sb_subprotocols)
 
-    def calcThermo(self, print_HOhf_result=True):
+        # Data frame initialization
+        # label | mode | prot | sub | sbprot | sbsub | E0 | E | S | Cv | Q 
+        # ----- | ---- | ---- | --- | ------ | ----- | -- | - | - | -- | -  
+        # Ex.   |      |      |     |        |       |    |   |   |    |   
+        # "s15" | "sb" |  NaN |  NaN|  "ho"  | "umvt"|  α | β | γ |  δ | ε 
+        # "s15" |"tors"| "pg" | "cc"| "umvt" |  NaN  |  Α | B | Γ |  Δ | Ε 
+        # "s15" | "rot"|  NaN |  NaN|  NaN   |  NaN  |  ζ | η | θ |  ι | κ 
+        # "s15" |"trns"|  NaN |  NaN|  NaN   |  NaN  |  Ζ | Η | Θ |  Ι | Κ 
+        # "s20" |"tors"| "pg" | "uu"|  "ho"  |  "ho" |  λ | μ | ν |  ξ | π 
+        # "s1"  |"tors"|"umvt"|  NaN|  NaN   |  NaN  |  Λ | Μ | Ν |  Ξ | Π 
+        self.csv = os.path.join(self.samp_obj.project_directory, "thermo.csv")
+        self.total_thermo = get_data_frame(self.csv)
+        self.data_frame = pd.DataFrame({'mode' : []})
+
+    def execute(self):
+        self.calcThermo(write=True)
+        return self.data_frame, self.csv
+
+    def calcThermo(self, write=True, print_output=True):
         """
         Calculate component thermodynamic quantities.
-        Unit conversions performed by each operation before returning.
+        Unit conversions performed by each operation.
+        Stored in self.data_frame data frame.
         """
-        E_trans, S_trans, Cv_trans, Q_trans =\
-                self.calcTransThermo()
-        E_rot, S_rot, Cv_rot, Q_rot =\
-                self.calcRotThermo()
-        E0, E_vib, S_vib, Cv_vib, Q_vib =\
-                self.calcVibThermo(protocol="PG")
-
-    def calcVibThermo(self, sb_protocol="HO", t_protocol="PG", t_subprotocol="CC",
-            sb_subprotocol="MC"):
-        """
-        Calculate component thermo quantities for internal modes.
-        Internal modes separted into:
-            Torsions
-                protocols: 'UMVT', 'PG'(coupled, u/c, uncoupled)
-            Stretches / Bends
-                protocols: 'HO'(ω: ho, umvt, mc), 'UMVT'
-        Unit conversions performed by each operation before returning.
-        """
-        E0_sb, E_sb, S_sb, Cv_sb, Q_sb =\
-                self.calcSBThermo(protocol=sb_protocol) # for non-torsions
-        E0_t, E_t, S_t, Cv_t, Q_t =\
-                self.calcTThermo(protocol=t_protocol, subprotocol=t_subprotocol,
-                        sb_protocol=sb_protocol, sb_subprotocol=sb_subprotocol) # for torsions
-        return (E0_sb+E0_t), (E_sb+E_t), (S_sb+S_t), (Cv_sb+Cv_t), (Q_sb*Q_t)
+        self.calcTransThermo()
+        self.calcRotThermo()
+        for sb_protocol in self.sb_protocols:
+            self.calcSBThermo(protocol=sb_protocol)
+        for t_protocol in self.t_protocols:
+            if t_protocol == 'PG':
+                ############ Pitzer-Gwinn Methods ############
+                for t_subprotocol in self.t_subprotocols:
+                    ######### PG Classical Partition #########
+                    for sb_protocol in self.sb_protocols:
+                        ######### Pitzer-Gwinn Factor #########
+                        if sb_protocol == 'HO': # PG factor = HO
+                            ######### HO ω's #########
+                            for sb_subprotocol in self.sb_subprotocols:
+                                self.calcSBThermo(protocol=t_protocol,
+                                        subprotocol=t_subprotocol,
+                                        sb_protocol=sb_protocol,
+                                        sb_subprotocol=sb_subprotocol)
+                        else: # PG factor = UMVT / MC
+                            self.calcSBThermo(protocol=t_protocol,
+                                    subprotocol=t_subprotocol,
+                                    sb_protocol=sb_protocol,
+                                    sb_subprotocol=None)
+            else: # method is not PG
+                self.calcTThermo(protocol=t_protocol, subprotocol=None,
+                        sb_protocol=None, sb_subprotocol=None)
+        self.total_thermo = pd.concat([self.data_frame], keys=[self.label],
+                names=['species'])
+        if write:
+            self.total_thermo.to_csv(self.csv)
+        if print_output:
+            pass
 
     def calcTClassical(self, subprotocol):
         """
@@ -87,14 +124,18 @@ class MCThermoJob:
                     (np.var(self.trace.bE/beta))*Hartree2kcal*1000 # Cv in cal/mol.K
             if "CC" in subprotocol:
                 # Calculate coupled torsional kinetic (T) contribution
-                # TODO
-                D = get_mass_matrix(protocol='coupled') # SI
+                print("Calculated sample covariance:")
+                print(get_sample_cov(self.trace, self.model))
+                D = get_mass_matrix(self.trace, self.model,
+                        protocol="coupled")[0] # SI
         if "U" in subprotocol:
             # Calculate uncoupled torsional kinetic (T) contribution
             # TODO
-            D = get_mass_matrix(protocol='uncoupled')   # SI, diagonal
+            D = get_mass_matrix(self.trace, self.model,
+                    protocol='uncoupled')   # SI, diagonal
             if "UU" in subprotocol:
                 # Calculate uncoupled torsional PES (V) contribution
+                # TODO
                 QV, EV, SV, CvV = 1, 0, 0, 0
                 pass
         beta_si = 1./(constants.kB*self.T)
@@ -128,12 +169,12 @@ class MCThermoJob:
                     "Invalid subprotocol for stretches/bends: valid options\
                             are 'HO', 'UMVT', or 'MC'.")
             kwargs = {'samp_obj' : self.samp_obj, 'D' : D, 'Thermo_obj' : self.Thermo}
-            ws = get_tors_freqs(protocol = sb_subprotocol, **kwargs) # Get freqs
+            ws = get_tors_freqs(protocol = sb_subprotocol, **kwargs) # s^-1
             for i,w in enumerate(ws):
                 # Calculate quantum HO properties
                 e0, e, s, q, cv =\
                         solvHO(w, self.T)
-                ec, sc, cvc, qc =\
+                ec, sc, qc, cvc =\
                         solvCHO(w, self.T)
                 F *= q/qc
                 Qc *= qc
@@ -153,7 +194,7 @@ class MCThermoJob:
                         self.Thermo.energy_dict,
                         [],
                         [], self.samp_obj)
-                ec, sc, cvc, qc =\
+                ec, sc, qc, cvc =\
                         solvUMClass(NMode, self.T)
                 F *= q/qc
                 Qc *= qc
@@ -207,7 +248,10 @@ class MCThermoJob:
                 S += s
                 Cv += cv
                 Q *= q
-        return E0, E, S, Cv, Q
+        t_dict = {'mode' : 'tors', 'protocol' : protocol, 'subprotocol' :
+                subprotocol, 'sb_protocol' : sb_protocol, 'sb_subprotocol' :
+                sb_subprotocol, 'e0' : E0, 's' : S, 'cv' : Cv, 'q' : Q}
+        self.data_frame = self.data_frame.append(t_dict, ignore_index=True)
 
     def calcSBThermo(self, protocol):
         """
@@ -224,6 +268,8 @@ class MCThermoJob:
         if protocol=="HO":
             # Calculate HO thermo for stretches/bends
             #TODO plus unit conversion
+            #FIRST STEP: get w in 1/s for each sb and pass to solvHO
+            s
             pass
         elif protocol=="UMVT":
             # Calculate UMVT thermo for stretches/bends
@@ -236,7 +282,10 @@ class MCThermoJob:
                 S_int += S
                 Q_int *= Q
                 Cv_int += Cv
-        return ZPE, E_int, S_int, Cv_int, Q_int
+        sb_dict = {'mode' : 'sb', 'sb_protocol' : protocol,
+                    'e0' : ZPE, 's' : S_int, 'cv' : Cv_int,
+                    'q' : Q_int}
+        self.data_frame = self.data_frame.append(sb_dict, ignore_index=True)
 
     def calcTransThermo(self):
         # Calculate global translation (ideal gas, Sackur-Tetrode)
@@ -245,7 +294,9 @@ class MCThermoJob:
         S_trans = self.conformer.modes[0].get_entropy(self.T) / 4.184 - constants.R * math.log(self.P / 101325) / 4.184
         Cv_trans = 1.5 * constants.R / 4184 * 1000
         Q_trans = self.conformer.modes[0].get_partition_function(self.T)
-        return E_trans, S_trans, Cv_trans, Q_trans
+        trans_dict = {'mode' : 'trans', 'e' : E_trans, 's' : S_trans,
+                    'cv' : Cv_trans, 'q' : Q_trans}
+        self.data_frame = self.data_frame.append(trans_dict, ignore_index=True)
 
     def calcRotThermo(self):
         # Calculate global rotation (rigid rotor)
@@ -254,4 +305,24 @@ class MCThermoJob:
         S_rot = self.conformer.modes[1].get_entropy(self.T) / 4.184
         Cv_rot = self.conformer.modes[1].get_heat_capacity(self.T) / 4.184
         Q_rot = self.conformer.modes[1].get_partition_function(self.T)
-        return E_rot, S_rot, Cv_rot, Q_rot
+        rot_dict = {'mode' : 'rot', 'e' : E_rot, 's' : S_rot, 'cv' :
+                    Cv_rot, 'q' : Q_rot}
+        self.data_frame = self.data_frame.append(rot_dict, ignore_index=True)
+
+    def calcVibThermo(self, sb_protocol="HO", t_protocol="PG", t_subprotocol="CC",
+            sb_subprotocol="MC"):
+        """
+        Calculate component thermo quantities for internal modes.
+        Internal modes separted into:
+            Torsions
+                protocols: 'UMVT', 'PG'(coupled, u/c, uncoupled)
+            Stretches / Bends
+                protocols: 'HO'(ω: ho, umvt, mc), 'UMVT'
+        Unit conversions performed by each operation before returning.
+        """
+        E0_sb, E_sb, S_sb, Cv_sb, Q_sb =\
+                self.calcSBThermo(protocol=sb_protocol) # for non-torsions
+        E0_t, E_t, S_t, Cv_t, Q_t =\
+                self.calcTThermo(protocol=t_protocol, subprotocol=t_subprotocol,
+                        sb_protocol=sb_protocol, sb_subprotocol=sb_subprotocol) # for torsions
+        return (E0_sb+E0_t), (E_sb+E_t), (S_sb+S_t), (Cv_sb+Cv_t), (Q_sb*Q_t)

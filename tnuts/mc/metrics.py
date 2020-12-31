@@ -25,6 +25,16 @@ def get_initial_mass_matrix(modes, T):
         variances.append(var)
     return np.array(variances)
 
+def get_sample_cov(trace, model):
+    model = pm.modelcontext(model)
+    samples = np.empty((len(trace)*trace.nchains, model.ndim))
+    i = 0
+    for chain in trace._straces.values():
+        for p in chain:
+            samples[i] = model.bijection.map(p)
+            i += 1
+    return np.cov(samples, rowvar=0), np.cov(trace.x)
+
 def get_step_for_trace(trace=None, model=None, covi=None,
                        regular_window=5, regular_variance=1e-3,
                        **kwargs):
