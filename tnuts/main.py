@@ -17,6 +17,7 @@ from tnuts.mc.metrics import get_step_for_trace, get_initial_mass_matrix
 from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from tnuts.geometry import Geometry
+from tnuts.thermo import MCThermoJob
 from ape.sampling import SamplingJob
 
 print('Running on PyMC3 v{}'.format(pm.__version__))
@@ -97,7 +98,7 @@ def NUTS_run(samp_obj,T,
                     chains=nchains, cores=1, start=start,
                     **nuts_kwargs)
 
-    #thermo_obj = MCThermo(trace, Z, T)
+    thermo_obj = MCThermoJob(trace, T, samp_obj=samp_obj, model=model)
     Q = Z*np.mean(trace.a)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\

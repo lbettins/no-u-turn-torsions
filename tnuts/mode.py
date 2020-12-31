@@ -13,9 +13,9 @@ Both sampling q (x) and PES (v or y) values are included.
 Spline populates the continuous PES x and y values and returns them.
 """
 class NMode:
-    def __init__(self, n=0, v=0.0, x=0.0, sample_geoms=None, 
+    def __init__(self, n=0, v=0.0, x=0.0, sample_geoms=None,
             tors=False, scan=None, v_ho=None, v_um=None, zpe_um=None,
-            I=None, mu=None, k=None, min_elec=None, sigma=None, eig=None, 
+            I=None, mu=None, k=None, min_elec=None, sigma=None, eig=None,
             eigv=None, H=None):
         self.n = n  #Mode #
         if isinstance(v, int):
@@ -63,11 +63,53 @@ class NMode:
             raise ValueError("No symmetry number or energy samples")
         if not self.isTors:
             raise ValueError("Can only calculate for torsions")
-        beta = 1/(constants.kB*T)*constants.E_h
-        fn = self.get_spline_fn()
+        beta = 1/(constants.kB*T)*constants.E_h # Hartree
+        beta_si = 1/(constants.kB*T)            # J
+        fn = self.get_spline_fn()               # Hartree
         s = self.get_symmetry_number()
+        I *= self.I*constants.amu*(1e-10)**2    # kg*m^2
         self.z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
+        self.z *= np.sqrt(I / (2*np.pi*beta_si*constants.hbar**2))
         return self.z
+
+    def get_average_energy(self,T):
+        if not self.sigma or not self.v_sample:
+            raise ValueError("No symmetry number or energy samples")
+        if not self.isTors:
+            raise ValueError("Can only calculate for torsions")
+        beta = 1/(constants.kB*T)*constants.E_h # 1/Hartree
+        J2kcal = 0.000239006
+        V = self.get_spline_fn()                # Hartree
+        s = self.get_symmetry_number()
+        Q = quad(lambda x: np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]
+        self.E = np.power(Q, -1)*quad(lambda x:\
+                V(x)*np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]  # Hartree
+        U = self.E*constants.Na*constants.E_h*J2kcal            # kcal/mol
+        return U
+
+    def get_energy_fluctuation(self,T):
+        beta = 1./constants.kB/T
+        J2kcal = 0.000239006
+        V = self.get_spline_fn()
+        s = self.get_symmetry_number()
+        Q = quad(lambda x: np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]
+        if not self.E:
+            self.E = np.power(Q, -1)*quad(lambda x:\
+                    V(x)*np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]  # Hartree
+        mu = self.E
+        self.varE = np.power(Q, -1)*quad(lambda x:\
+                np.power(V(x)-mu, 2)\
+                *np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]          # Hartree^2
+        varE *= self.varE*np.power(constants.Na*constants.E_h*J2kcal, 2)
+        return varE
+
+    def get_helmholtz_free_energy(self,T):
+        if not self.z:
+            Q = self.get_classical_partition_fn(T)
+        else:
+            Q = self.z
+        R = 1.985877534e-3  # kcal/mol.K
+        return -R*T*np.log(Q)
 
     def set_mode_number(self,n):
         if self.n and type(self.n) is int:
