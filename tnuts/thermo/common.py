@@ -13,6 +13,12 @@ def get_data_frame(csv_filepath):
         # return already existing .csv
         return pd.read_csv(csv_filepath)
 
+def get_sb_freqs(mode_dict, protocol='HO'):
+    freqs = []
+    for mode in sorted(mode_dict.keys()):
+        freqs.append(np.sqrt(mode_dict[mode]['K']))
+    return freqs    # ω in 1/s
+
 def get_tors_freqs(protocol='HO', D=None, Thermo_obj=None, samp_obj=None,
         T=None):
     """
@@ -44,19 +50,38 @@ def get_tors_freqs(protocol='HO', D=None, Thermo_obj=None, samp_obj=None,
             int_freq = solv_eig_out[0] * (2*np.pi*constants.c*100) # in s^-1
             freqs.append(int_freq)
     elif protocol == "MC":
-        # Solve eigenval problem |K - w^2 D| = 0
+        # Solve eigenval problem |K - ω^2 M| = 0
+        # i.e.                   |K - ω^2*β(Σ^-1)| = 0 
+        # ω^2 Σ^-1 = β^-1 Κ
+        # λ = β^-1 * K Σ
+        # ωf = √ωi^2 (β^-1 * K Σ)
         if D is None:
             raise TypeError("Protocol",protocol,"requires covariance mx D.")
         pass
     return freqs
 
-def get_mass_matrix(trace, model, protocol="uncoupled"):
+def get_mass_matrix(trace, model, T, mode_dict, protocol="uncoupled"):
     if protocol == "coupled":
+        return get_mass_matrix(trace, model, T, mode_dict, protocol="uncoupled")
         from tnuts.mc.metrics import get_sample_cov
-        # TODO: unit conversions
-        return get_sample_cov(trace, model)[0]
+        # # # # # # # # # # # # # # # # # # #
+        #    Σtrue = β/(Mω^2) = β/κ         # ω = 1/s for optimal M
+        #   =>  Σsim = βΜ^-1                #
+        #    => M = β(Σsim)^-1              #
+        # # # # # # # # # # # # # # # # # # #
+        sig = get_sample_cov(trace, model)[0]
+        beta = 1/(constants.kB*T)
+        w = get_tors_freqs()
+        M = beta/sig        # Units?
+        return M
     elif protocol == "uncoupled":
-        return
+        M = []
+        for mode in sorted(mode_dict.keys()):
+            if mode_dict[mode]['mode'] != 'tors':
+                continue
+            M.append(mode_dict[mode]['M'])  # Units of amu*angstrom^2
+        M = np.diag(M)*constants.amu*(1e-20)   # convert to SI kg*m^2
+        return M
 
 def solvHO(w, T):
     """Solve quantum HO given frequency and temperature"""
@@ -94,11 +119,11 @@ def solvUMClass(nmode, T):
     """Solve classical UM partition function for torsions"""
     R = 1.985877534e-3  # kcal/mol.K
     qc = nmode.get_classical_partition_fn(T)
-    ec = nmode.get_average_energy(T)        # kcal/mol
+    ec = nmode.get_average_energy(T)        # kcal/mol (T + V)
     fc = nmode.get_helmholtz_free_energy(T) # kcal/mol
     sc = (ec-fc)/T * 1000                   # cal/mol.K
-    var_e = nmode.get_energy_fluctuation(T) # (kcal/mol)^2
-    cvc = np.power(R*T**2, -1)*var_e * 1000 # cal/mol.K
+    #var_e = nmode.get_energy_fluctuation(T) # (kcal/mol)^2
+    cvc = nmode.get_heat_capacity(T)*1000   # cal/mol.K
     return ec, sc, qc, cvc
 
 #SCRATCH

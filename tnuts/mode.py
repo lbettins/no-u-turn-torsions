@@ -82,26 +82,32 @@ class NMode:
         V = self.get_spline_fn()                # Hartree
         s = self.get_symmetry_number()
         Q = quad(lambda x: np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]
-        self.E = np.power(Q, -1)*quad(lambda x:\
-                V(x)*np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]  # Hartree
+        self.E = np.power(2*beta, -1)\
+                + np.power(Q, -1)*quad(lambda x: V(x)*np.exp(-beta*V(x)),
+                        -np.pi/s, np.pi/s)[0]  # Hartree
         U = self.E*constants.Na*constants.E_h*J2kcal            # kcal/mol
         return U
 
     def get_energy_fluctuation(self,T):
-        beta = 1./constants.kB/T
+        # WARNING: this only gives the potential term, not the kinetic!
+        # Must add 1/2 RT to the Cv
+        beta = 1./constants.kB/T*constants.E_h  # 1/Hartree
         J2kcal = 0.000239006
         V = self.get_spline_fn()
         s = self.get_symmetry_number()
-        Q = quad(lambda x: np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]
-        if not self.E:
-            self.E = np.power(Q, -1)*quad(lambda x:\
+        Qv = quad(lambda x: np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]
+        E = np.power(Qv, -1)*quad(lambda x:\
                     V(x)*np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]  # Hartree
-        mu = self.E
-        self.varE = np.power(Q, -1)*quad(lambda x:\
+        mu = E
+        self.varE = np.power(Qv, -1)*quad(lambda x:\
                 np.power(V(x)-mu, 2)\
                 *np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]          # Hartree^2
-        varE *= self.varE*np.power(constants.Na*constants.E_h*J2kcal, 2)
+        varE *= self.varE*np.power(constants.Na*constants.E_h*J2kcal, 2) # (kcal/mol)^2
         return varE
+
+    def get_heat_capacity(self,T):
+        R = 1.985877534e-3  # kcal/mol.K
+        return 0.5*R + np.power(R*T**2, -1) * self.get_energy_fluctuation
 
     def get_helmholtz_free_energy(self,T):
         if not self.z:
