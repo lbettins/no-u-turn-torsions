@@ -17,7 +17,7 @@ from tnuts.mc.metrics import get_step_for_trace, get_initial_mass_matrix
 from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from tnuts.geometry import Geometry
-from tnuts.thermo import MCThermoJob
+from tnuts.thermo.thermo import MCThermoJob
 from ape.sampling import SamplingJob
 
 print('Running on PyMC3 v{}'.format(pm.__version__))
