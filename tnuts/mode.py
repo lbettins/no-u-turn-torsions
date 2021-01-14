@@ -58,7 +58,7 @@ class NMode:
             raise ValueError("I and mu exist simultaneously!")
         self.z = None   #partition function contribution for this mode
 
-    def get_classical_partition_fn(self,T):
+    def get_classical_partition_fn(self,T, protocol='all'):
         if not self.sigma or not self.v_sample:
             raise ValueError("No symmetry number or energy samples")
         if not self.isTors:
@@ -67,10 +67,14 @@ class NMode:
         beta_si = 1/(constants.kB*T)            # J
         fn = self.get_spline_fn()               # Hartree
         s = self.get_symmetry_number()
-        I *= self.I*constants.amu*(1e-10)**2    # kg*m^2
-        self.z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
-        self.z *= np.sqrt(I / (2*np.pi*beta_si*constants.hbar**2))
-        return self.z
+        z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
+        if protocol == 'all':
+            I = self.I*constants.amu*(1e-10)**2    # kg*m^2
+            z *= np.sqrt(I / (2*np.pi*beta_si*constants.hbar**2))
+            self.z = z
+            return self.z
+        elif protocol == 'V':
+            return z
 
     def get_average_energy(self,T):
         if not self.sigma or not self.v_sample:
@@ -102,12 +106,12 @@ class NMode:
         self.varE = np.power(Qv, -1)*quad(lambda x:\
                 np.power(V(x)-mu, 2)\
                 *np.exp(-beta*V(x)), -np.pi/s, np.pi/s)[0]          # Hartree^2
-        varE *= self.varE*np.power(constants.Na*constants.E_h*J2kcal, 2) # (kcal/mol)^2
+        varE = self.varE*np.power(constants.Na*constants.E_h*J2kcal, 2) # (kcal/mol)^2
         return varE
 
     def get_heat_capacity(self,T):
         R = 1.985877534e-3  # kcal/mol.K
-        return 0.5*R + np.power(R*T**2, -1) * self.get_energy_fluctuation
+        return 0.5*R+np.power(R*T**2, -1)*self.get_energy_fluctuation(T)
 
     def get_helmholtz_free_energy(self,T):
         if not self.z:

@@ -13,12 +13,17 @@ from scipy.integrate import quad
 from scipy import stats
 from pymc3.distributions import Interpolated
 from tnuts.mc.ops import Energy, LogPrior
-from tnuts.mc.metrics import get_step_for_trace, get_initial_mass_matrix
+from tnuts.mc.metrics import get_step_for_trace, get_initial_mass_matrix,\
+        get_initial_values
 from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from tnuts.geometry import Geometry
 from tnuts.thermo.thermo import MCThermoJob
 from ape.sampling import SamplingJob
+from tnuts.mc.dist import MyDist, MyPeriodic
+from pymc3.distributions.dist_math import bound
+from pymc3.distributions.transforms import TransformedDistribution
+from pymc3_ext.distributions import transforms as tr
 
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
@@ -38,21 +43,47 @@ def NUTS_run(samp_obj,T,
     variances = get_initial_mass_matrix(tmodes, T)
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     energy_fn = Energy(geom, beta)
+    lower = np.array([-np.pi/s for s in syms])
+    upper = np.array([np.pi/s for s in syms])
+    transform = tr.PeriodicTransform(lower=lower, upper=upper)
     n_d = len(tmodes)
-    resolution = 5.0  #degrees
+    resolution = 10.0  #degrees
     step_scale = resolution*(np.pi/180) / (1/n_d)**(0.25)
+    L = 2*np.pi/syms
+    center_mod = lambda x: \
+        ((x.transpose() % L) \
+        - L*((x.transpose() % L)\
+        // (L/2))).transpose()
     if not hpc:
         with pm.Model() as model:
-            #x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.uniform(-1,1,n_d)*np.pi)
-            x = pm.DensityDist('x', logp, shape=n_d)
-            DeltaE = (-logp(x)+(np.random.rand()-0.5)/500) -\
-                    (-logp(x))
+            #Bound = pm.Bound(MyDist, lower=-np.pi/syms,
+            #        upper=np.pi/syms)
+            #x = Bound('x', logp, tmodes, T,
+            #        shape=n_d,
+            #        testval=get_initial_values(tmodes, T))
+            x = pm.DensityDist('x', logp, shape=n_d,
+                    testval=get_initial_values(tmodes, T))
+            #x = MyDist('x', logp, tmodes, T,
+            #        shape=n_d,
+            #        testval=get_initial_values(tmodes, T))
+            #x = MyPeriodic('x', logp, tmodes,
+            #        shape=n_d,
+            #        testval=get_initial_values(tmodes, T))
+            #x = MyDist('x', logp, tmodes, T,
+            #        shape=(n_d, 1),
+            #        testval=get_initial_values(tmodes,T),
+            #        transform=transform)
+            xmod = pm.Deterministic('xmod', center_mod(x))
+            bE = pm.Deterministic('bE', -logp(xmod)+\
+                    (np.random.rand()-0.5)/10000)
+            DeltaE = bE - (-logp(xmod))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
-            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E), observed={'E':DeltaE})
+            #E_obs = pm.Potential('E_obs', logpE(DeltaE))
+            E_obs = pm.DensityDist('E_obs', lambda E: logpE(E),
+                    observed={'E':DeltaE})
         with model:
-            step = pm.NUTS(target_accept=0.9, step_scale=step_scale, early_max_treedepth=6,
-                    max_treedepth=7, adapt_step_size=False)
-            step = pm.NUTS(target_accept=0.65, scaling=variances, is_cov=True,
+            step = pm.NUTS(
+                    target_accept=0.65, scaling=variances, is_cov=True,
                     step_scale=step_scale, early_max_treedepth=6,
                     max_treedepth=6, adapt_step_size=False)
             trace = pm.sample(nsamples, tune=tune, step=step,
@@ -60,7 +91,9 @@ def NUTS_run(samp_obj,T,
     else:
         with pm.Model() as model:
             #x = pm.DensityDist('x', logp, shape=n_d, testval=np.random.rand(n_d)*2*np.pi)
-            x = pm.DensityDist('x', logp, shape=n_d, testval=np.zeros(n_d))
+            x = pm.DensityDist('x', logp, shape=n_d,
+                    testval=get_initial_values(tmodes, T))
+            xmod = pm.Deterministic('xmod', center_mod(x))
             bE = pm.Deterministic('bE', energy_fn(x))
             DeltaE = (bE)-(-logp(x))
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
@@ -68,42 +101,28 @@ def NUTS_run(samp_obj,T,
                     lambda E: logpE(E), observed={'E':DeltaE})
         with model:
             if protocol == 'NUTS':
-                start = None
-                burnin_trace = None
-                # Define tuning schedule
-                n_start = tune // 10
-                n_burn = tune
-                n_tune = tune*5
-                n_window = n_start*2**np.arange(
-                        np.floor(np.log2((n_tune - n_burn) / n_start)))
-                n_window = np.append(n_window, n_tune - n_burn - np.sum(n_window))
-                n_window = n_window.astype(int)
-                nuts_kwargs = dict(target_accept=0.7,
+                nuts_kwargs = dict(target_accept=0.5,
                         step_scale=step_scale, early_max_treedepth=5,
-                        max_treedepth=5, adapt_step_size=True)
-                for steps in n_window:
-                    step = get_step_for_trace(burnin_trace, covi=variances,
-                            regular_window=0)
-                    burnin_trace = pm.sample(
-                        cores=1, start=start, tune=steps, draws=2, step=step,
-                        compute_convergence_checks=False,
-                        discard_tuned_samples=False, **nuts_kwargs)
-                    start = [t[-1] for t in burnin_trace._straces.values()]
-                step = get_step_for_trace(burnin_trace,
-                        regular_window=0, **nuts_kwargs)
-                #step = pm.NUTS(target_accept=0.75, scaling=variances, is_cov=True,
-                #        step_scale=step_scale, early_max_treedepth=6,
-                #        max_treedepth=6, adapt_step_size=True)
+                        max_treedepth=6, adapt_step_size=True)
+                step = pm.NUTS(scaling=variances, is_cov=True,
+                        **nuts_kwargs)
             trace = pm.sample(nsamples, tune=0, step=step,
-                    chains=nchains, cores=1, start=start,
-                    **nuts_kwargs)
-
-    thermo_obj = MCThermoJob(trace, T, samp_obj=samp_obj, model=model)
+                    chains=nchains, cores=1, start=start)
+    print("Initial cov:\n", np.diag(variances))
+    print("Trace cov:\n", np.atleast_1d(pm.trace_cov(trace,
+        model=model)))
+    print("Trace summary:\n", np.cov(trace.x.transpose()),
+            np.mean(trace.x, axis=0)) 
+    print("Trace summary: modx\n", np.cov(trace.xmod.transpose()),
+            np.mean(trace.xmod, axis=0))
     Q = Z*np.mean(trace.a)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
             'geom_obj' : geom, 'modes' : tmodes}
+    thermo_obj = MCThermoJob(trace, T, samp_obj=samp_obj, model=model)
+    a,b = thermo_obj.execute()
+    print(a.loc[:,['mode', 'q', 'e', 's', 'protocol', 'sb_protocol']])
     pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}.p'
     trace_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}_trace.p'
     n = 0
@@ -124,13 +143,17 @@ def NUTS_run(samp_obj,T,
         print("Prior partition function:\t", Z)
         print("Posterior partition function:\t", np.mean(trace.a)*Z)
         print("Expected likelihood:\t", np.mean(trace.a))
-        print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
-        print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
+        #print("Best step size:", trace.get_sampler_stats("step_size_bar")[:tune+1])
+        #print("Step size:", trace.get_sampler_stats("step_size")[:tune+1])
         print(model_dict)
 
 def generate_umvt_logprior(samp_obj, T):
     # Get the torsions from the APE object
     # With APE updates, should edit APE sampling.py to [only] sample torsions
+    samp_obj.csv_path = os.path.join(samp_obj.output_directory,
+            '{}_sampling_result.csv'.format(samp_obj.label))
+    if os.path.exists(samp_obj.csv_path):
+        os.remove(samp_obj.csv_path)
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
     modes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
             samp_obj=samp_obj, just_tors=True)

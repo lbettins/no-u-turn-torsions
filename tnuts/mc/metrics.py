@@ -9,6 +9,25 @@ import pymc3 as pm
 import numpy as np
 from pymc3.step_methods.hmc.quadpotential import QuadPotentialFull
 
+def get_initial_values(modes, T):
+    from scipy.integrate import quad
+    from scipy.optimize import fsolve
+    import rmgpy.constants as constants
+    fns = np.array([mode.get_spline_fn() for mode in modes])
+    sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
+    beta = 1/(constants.kB*T)*constants.E_h
+    xi = []
+    for fn,s in zip(fns,sym_nums):
+        f = lambda x: np.exp(-beta*fn(x))
+        Z = quad(f, -np.pi/s, np.pi/s)[0]
+        cdf = lambda x: \
+                quad(lambda phi: f(phi)/Z, -np.pi/s, x/s)[0]
+        pi = np.random.rand()
+        root = fsolve(lambda xval: cdf(xval) - pi, 0)[0]
+        print(root, "is the val associated with percentile", pi)
+        xi.append(root)
+    return np.array(xi)
+
 def get_initial_mass_matrix(modes, T):
     from scipy.integrate import quad
     import rmgpy.constants as constants

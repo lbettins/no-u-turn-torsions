@@ -18,8 +18,8 @@ class LogPrior(tt.Op):
         self.sym_ns = sym_n_array
         self.ndim = len(fn_array)
         self.dlogp = LogPriorGrad(self.Epriors, self.beta, self.ndim)
-        self.L = 2*np.pi/self.sym_ns
         self.count = 0
+        self.L = 2*np.pi/self.sym_ns
         self.center_mod = lambda x: \
                 ((x.transpose() % self.L) \
                 - self.L*((x.transpose() % self.L) // ((self.L)/2))).transpose()

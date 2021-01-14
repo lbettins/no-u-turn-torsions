@@ -54,7 +54,7 @@ class MCThermoJob:
         # "s15" |"trns"|  NaN |  NaN|  NaN   |  NaN  |  Ζ | Η | Θ |  Ι | Κ 
         # "s20" |"tors"| "pg" | "uu"|  "ho"  |  "ho" |  λ | μ | ν |  ξ | π 
         # "s1"  |"tors"|"umvt"|  NaN|  NaN   |  NaN  |  Λ | Μ | Ν |  Ξ | Π 
-        self.csv = os.path.join(self.samp_obj.project_directory, "thermo.csv")
+        self.csv = os.path.join(self.samp_obj.output_directory, "thermo.csv")
         self.total_thermo = get_data_frame(self.csv)
         self.data_frame = pd.DataFrame({'mode' : []})
 
@@ -82,16 +82,16 @@ class MCThermoJob:
                         if sb_protocol == 'HO': # PG factor = HO
                             ######### HO ω's #########
                             for sb_subprotocol in self.sb_subprotocols:
-                                self.calcSBThermo(protocol=t_protocol,
+                                self.calcTThermo(protocol=t_protocol,
                                         subprotocol=t_subprotocol,
                                         sb_protocol=sb_protocol,
                                         sb_subprotocol=sb_subprotocol)
                         else: # PG factor = UMVT / MC
-                            self.calcSBThermo(protocol=t_protocol,
+                            self.calcTThermo(protocol=t_protocol,
                                     subprotocol=t_subprotocol,
                                     sb_protocol=sb_protocol,
                                     sb_subprotocol=None)
-            else: # method is not PG
+            else: # method is not PG (is UMVT)
                 self.calcTThermo(protocol=t_protocol, subprotocol=None,
                         sb_protocol=None, sb_subprotocol=None)
         self.total_thermo = pd.concat([self.data_frame], keys=[self.label],
@@ -113,51 +113,56 @@ class MCThermoJob:
         beta = 1/(constants.kB*self.T)*constants.E_h # beta in Hartree
         # Unit conversion constants:
         J2cal = 1./4.184    # 1cal / 4.184J
-        Hartree2kcal = constants.E_h * J2cal*1000   # (J/H)*(1cal/4.184J)*1k
-        if 'C' in subprotocol:
+        Hartree2kcal = constants.E_h*\
+                constants.Na*J2cal*1000   # (J/H)*(1cal/4.184J)*1k
+        #################################################
+        # Calculate  torsional kinetic (T) contribution #
+        #################################################
+        D = get_mass_matrix(self.trace, self.model, self.T,
+                self.Thermo.mode_dict,
+                protocol="uncoupled") # SI
+        R = 1.985877534e-3       # kcal/mol.K
+        beta_si = 1./(constants.kB*self.T)
+        prefactor = 1./(2*np.pi*beta_si*np.power(constants.hbar,2.))
+        QT = np.power(prefactor, ntors/2)*np.power(np.linalg.det(D), 0.5)
+        ET = 0.5*ntors*R*self.T     # ET in kcal/mol
+        ST = R*(np.log(QT) + ntors/2.) * 1000   #S in cal/mol.K
+        CvT = R*ntors/2. * 1000    # Cv in cal/mol.K
+
+        EtclassU, StclassU, CvtclassU, QtclassU, Qv = 0, 0, 0, 1, 1
+        for mode in sorted(self.Thermo.mode_dict.keys()):
+            if self.Thermo.mode_dict[mode]['mode'] != 'tors':
+                continue
+            # Calculate classical properties
+            NMode = dict_to_NMode(mode, self.Thermo.mode_dict,
+                    self.Thermo.energy_dict,
+                    [],
+                    [], self.samp_obj)
+            ec, sc, qc, qv, cvc =\
+                    solvUMClass(NMode, self.T)
+            EtclassU += ec
+            StclassU += sc
+            CvtclassU += cvc
+            QtclassU *= qc
+            Qv *= qv
+        if "U" in subprotocol:
+            return EtclassU, StclassU, CvtclassU, QtclassU
+        elif 'C' in subprotocol:
             # Calculate coupled torsional PES contribution for all tors
-            QV = self.Z*np.mean(self.trace.a)
-            EV = np.mean(self.trace.bE)/beta * Hartree2kcal # E in kcal/mol
-            SV = constants.kB(np.log(QV) + np.mean(self.trace.bE))*\
-                    J2cal  # S in cal/mol.K
+            QV = Qv*np.mean(self.trace.a)
+            print("Expected kinetic pf, coupled:", QT)
+            print("Expected partition function, coupled:", QV, Qv)
+            print("Product:", QT*QV)
+            EV = np.mean(self.trace.bE)*R*self.T # E in kcal/mol
+            SV = R*(np.log(QV) + np.mean(self.trace.bE))*1000\
+                # S in cal/mol.K
             CvV = beta/self.T*\
                     (np.var(self.trace.bE/beta))*Hartree2kcal*1000 # Cv in cal/mol.K
-            if "CC" in subprotocol:
-                # Calculate coupled torsional kinetic (T) contribution
-                D = get_mass_matrix(self.trace, self.model, self.T,
-                        self.Thermo.mode_dict,
-                        protocol="coupled") # SI
-            beta_si = 1./(constants.kB*self.T)
-            R = 1.985877534e-3       # kcal/mol.K
-            beta = 1./(R*self.T)
-            prefactor = 1./(2*np.pi*beta_si*np.power(constants.hbar,2.))
-            QT = np.power(prefactor*np.linalg.det(D), ntors/2)
-            ET = ntors/(2*beta)     # ET in kcal/mol
-            ST = R*(np.log(QT) + ntors/2.) * 1000   #S in cal/mol.K
-            CvT = R*ntors/2. * 1000    # Cv in cal/mol.K
-
-            Qtclass = QV * QT
-            Etclass = EV + ET
-            Stclass = SV + ST
-            Cvtclass = CvV + CvT
-            return Etclass, Stclass, Cvtclass, Qtclass
-        if "U" in subprotocol:
-            Etclass, Stclass, Cvtclass, Qtclass = 0, 0, 0, 1
-            for mode in sorted(self.Thermo.mode_dict.keys()):
-                if self.Thermo.mode_dict[mode]['mode'] != 'tors':
-                    continue
-                # Calculate classical properties
-                NMode = dict_to_NMode(mode, self.Thermo.mode_dict,
-                        self.Thermo.energy_dict,
-                        [],
-                        [], self.samp_obj)
-                ec, sc, qc, cvc =\
-                        solvUMClass(NMode, self.T)
-                Etclass += ec
-                Stclass += sc
-                Cvtclass += cvc
-                Qtclass *= qc
-            return Etclass, Stclass, Cvtclass, Qtclass
+            QtclassC = QV*QT
+            EtclassC = EV+ET
+            StclassC = SV+ST
+            CvtclassC = CvV+CvT
+            return EtclassC, StclassC, CvtclassC, QtclassC
 
     def calcPGFactor(self, sb_protocol, sb_subprotocol):
         """
@@ -176,7 +181,7 @@ class MCThermoJob:
                 raise TypeError(
                     "Invalid subprotocol for stretches/bends: valid options\
                             are 'HO', 'UMVT', or 'MC'.")
-            kwargs = {'samp_obj' : self.samp_obj, 'D' : D, 'Thermo_obj' : self.Thermo}
+            kwargs = {'samp_obj' : self.samp_obj, 'T' : self.T, 'Thermo_obj' : self.Thermo}
             ws = get_tors_freqs(protocol = sb_subprotocol, **kwargs) # s^-1
             for i,w in enumerate(ws):
                 # Calculate quantum HO properties
@@ -202,7 +207,7 @@ class MCThermoJob:
                         self.Thermo.energy_dict,
                         [],
                         [], self.samp_obj)
-                ec, sc, qc, cvc =\
+                ec, sc, qc, qv, cvc =\
                         solvUMClass(NMode, self.T)
                 F *= q/qc
                 Qc *= qc
@@ -210,6 +215,7 @@ class MCThermoJob:
                 DE += e - ec
                 DS += s - sc
                 DCv += cv - cvc
+        v=None
         return v, Qc, F, E0divQtclass, DE, DS, DCv
 
     def calcTThermo(self, protocol="PG", subprotocol="CC",\
@@ -256,9 +262,22 @@ class MCThermoJob:
                 S += s
                 Cv += cv
                 Q *= q
+        elif protocol == 'HO':
+            E0, E, S, Cv, Q = 0, 0, 0, 0, 1
+            kwargs = {'samp_obj' : self.samp_obj, 'T' : self.T, 'Thermo_obj' : self.Thermo}
+            ws = get_tors_freqs(protocol=protocol, **kwargs) # s^-1
+            for i,w in enumerate(ws):
+                # Calculate quantum HO properties
+                e0, e, s, q, cv =\
+                        solvHO(w, self.T)
+                E0 += e0
+                E += e
+                S += s
+                Cv += cv
+                Q *= q
         t_dict = {'mode' : 'tors', 'protocol' : protocol, 'subprotocol' :
                 subprotocol, 'sb_protocol' : sb_protocol, 'sb_subprotocol' :
-                sb_subprotocol, 'e0' : E0, 's' : S, 'cv' : Cv, 'q' : Q}
+                sb_subprotocol, 'e0' : E0, 'e' : E, 's' : S, 'cv' : Cv, 'q' : Q}
         self.data_frame = self.data_frame.append(t_dict, ignore_index=True)
 
     def calcSBThermo(self, protocol):
@@ -289,14 +308,14 @@ class MCThermoJob:
             for mode in sorted(self.Thermo.mode_dict.keys()):
                 if self.Thermo.mode_dict[mode]['mode'] == 'tors':  # skip torsions
                     continue
-                v, e0, E, S, F, Q, Cv = self.SolvEig(mode, self.T)
+                v, e0, E, S, F, Q, Cv = self.Thermo.SolvEig(mode, self.T)
                 ZPE += e0
                 E_int += E
                 S_int += S
                 Q_int *= Q
                 Cv_int += Cv
         sb_dict = {'mode' : 'sb', 'sb_protocol' : protocol,
-                    'e0' : ZPE, 's' : S_int, 'cv' : Cv_int,
+                'e0' : ZPE, 'e' : E_int, 's' : S_int, 'cv' : Cv_int,
                     'q' : Q_int}
         self.data_frame = self.data_frame.append(sb_dict, ignore_index=True)
 
