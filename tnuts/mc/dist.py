@@ -5,8 +5,8 @@ from scipy.integrate import quad
 import rmgpy.constants as constants
 import theano.tensor as tt
 from pymc3.distributions.dist_math import bound
-import pymc3_ext as pmx
-from pymc3_ext.distributions import transforms as tr
+#import pymc3_ext as pmx
+#from pymc3_ext.distributions import transforms as tr
 
 class MyDist(pm.Continuous):
     def __init__(self, logp, modes, T, *args, **kwargs):

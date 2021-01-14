@@ -23,7 +23,7 @@ from ape.sampling import SamplingJob
 from tnuts.mc.dist import MyDist, MyPeriodic
 from pymc3.distributions.dist_math import bound
 from pymc3.distributions.transforms import TransformedDistribution
-from pymc3_ext.distributions import transforms as tr
+#from pymc3_ext.distributions import transforms as tr
 
 print('Running on PyMC3 v{}'.format(pm.__version__))
 
@@ -103,11 +103,11 @@ def NUTS_run(samp_obj,T,
             if protocol == 'NUTS':
                 nuts_kwargs = dict(target_accept=0.5,
                         step_scale=step_scale, early_max_treedepth=5,
-                        max_treedepth=6, adapt_step_size=True)
+                        max_treedepth=6, adapt_step_size=False)
                 step = pm.NUTS(scaling=variances, is_cov=True,
                         **nuts_kwargs)
-            trace = pm.sample(nsamples, tune=0, step=step,
-                    chains=nchains, cores=1, start=start)
+            trace = pm.sample(nsamples, tune=tune, step=step,
+                    chains=nchains, cores=1)
     print("Initial cov:\n", np.diag(variances))
     print("Trace cov:\n", np.atleast_1d(pm.trace_cov(trace,
         model=model)))
@@ -152,8 +152,8 @@ def generate_umvt_logprior(samp_obj, T):
     # With APE updates, should edit APE sampling.py to [only] sample torsions
     samp_obj.csv_path = os.path.join(samp_obj.output_directory,
             '{}_sampling_result.csv'.format(samp_obj.label))
-    if os.path.exists(samp_obj.csv_path):
-        os.remove(samp_obj.csv_path)
+    #if os.path.exists(samp_obj.csv_path):
+    #    os.remove(samp_obj.csv_path)
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
     modes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
             samp_obj=samp_obj, just_tors=True)
