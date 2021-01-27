@@ -41,7 +41,7 @@ def NUTS_run(samp_obj,T,
     #Is = np.array([mode.get_I() for mode in tmodes])
     Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in tmodes])
     variances = get_initial_mass_matrix(tmodes, T)
-    variances = Ks
+    #variances = 1/Ks
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     energy_fn = Energy(geom, beta)
     lower = np.array([-np.pi/s for s in syms])
