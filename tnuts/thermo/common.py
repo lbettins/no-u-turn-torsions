@@ -16,6 +16,8 @@ def get_data_frame(csv_filepath):
 def get_sb_freqs(mode_dict, protocol='HO'):
     freqs = []
     for mode in sorted(mode_dict.keys()):
+        if mode_dict[mode]['mode'] == 'tors':
+            continue
         freqs.append(np.sqrt(mode_dict[mode]['K']))
     return freqs    # ω in 1/s
 

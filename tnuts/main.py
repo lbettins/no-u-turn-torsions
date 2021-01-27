@@ -38,14 +38,15 @@ def NUTS_run(samp_obj,T,
     logpE = lambda E: -E    # E must be dimensionless
     logp, Z, tmodes = generate_umvt_logprior(samp_obj, T)
     syms = np.array([mode.get_symmetry_number() for mode in tmodes])
-    Is = np.array([mode.get_I() for mode in tmodes])
-    #Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in modes])
+    #Is = np.array([mode.get_I() for mode in tmodes])
+    Ks = np.array([beta*mode.get_spline_fn()(0,2) for mode in tmodes])
     variances = get_initial_mass_matrix(tmodes, T)
+    variances = Ks
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     energy_fn = Energy(geom, beta)
     lower = np.array([-np.pi/s for s in syms])
     upper = np.array([np.pi/s for s in syms])
-    transform = tr.PeriodicTransform(lower=lower, upper=upper)
+    #transform = tr.PeriodicTransform(lower=lower, upper=upper)
     n_d = len(tmodes)
     resolution = 10.0  #degrees
     step_scale = resolution*(np.pi/180) / (1/n_d)**(0.25)
@@ -120,24 +121,28 @@ def NUTS_run(samp_obj,T,
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
             'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
             'geom_obj' : geom, 'modes' : tmodes}
-    thermo_obj = MCThermoJob(trace, T, samp_obj=samp_obj, model=model)
+    thermo_obj = MCThermoJob(trace, T, sampT=T, samp_obj=samp_obj, model=model)
     a,b = thermo_obj.execute()
     print(a.loc[:,['mode', 'q', 'e', 's', 'protocol', 'sb_protocol']])
     pkl_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}.p'
-    trace_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{t_a}_{n}_trace.p'
+    trace_file = '{label}_{nc}_{nburn}_{ns}_{T}K_{n}_trace.p'
     n = 0
     pkl_kwargs = dict(label=samp_obj.label, nc=nchains,
             nburn=tune, ns=nsamples, T=T,
             t_a=0.5, n=n)
-    while os.path.exists(os.path.join(samp_obj.output_directory, pkl_file.format(**pkl_kwargs))):
+    while os.path.exists(os.path.join(samp_obj.output_directory, trace_file.format(**pkl_kwargs))):
         n += 1
         pkl_kwargs['n'] = n
+        print(n)
     #pickle.dump(model_dict,
     #        open(os.path.join(samp_obj.output_directory,pkl_file.format(**pkl_kwargs)),'wb'),
     #        protocol=4)
-    pickle.dump(model_dict,
-            open(os.path.join(samp_obj.output_directory,trace_file.format(**pkl_kwargs)),'wb'),
-            protocol=4)
+    with open(os.path.join(samp_obj.output_directory,
+        trace_file.format(**pkl_kwargs)), 'wb') as f:
+        pickle.dump(model_dict, f, protocol=4)
+    #pickle.dump(model_dict,
+    #        open(os.path.join(samp_obj.output_directory,trace_file.format(**pkl_kwargs)),'wb'),
+    #        protocol=4)
     if not hpc:
         plot_MC_torsion_result(trace,tmodes,T)
         print("Prior partition function:\t", Z)
