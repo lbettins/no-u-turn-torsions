@@ -54,7 +54,7 @@ def get_tors_freqs(protocol='HO', D=None, Thermo_obj=None, samp_obj=None,
         freqs.append(int_freq)
     return freqs
 
-def get_mass_matrix(trace, model, T, mode_dict, protocol="uncoupled"):
+def get_mass_matrix(trace, T, mode_dict, protocol="uncoupled", model=None):
     if protocol == "coupled":
         return get_mass_matrix(trace, model, T, mode_dict, protocol="uncoupled")
         from tnuts.mc.metrics import get_sample_cov

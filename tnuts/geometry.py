@@ -64,10 +64,10 @@ class Geometry:
         if not os.path.exists(self.path):
             os.makedirs(self.path)
         n = 0
-        traj_log = os.path.join(samp_obj.output_directory, 'nuts_out', 'trajectories_{}.txt')
-        while os.path.exists(traj_log.format(n)):
+        traj_log = os.path.join(samp_obj.output_directory, 'nuts_out', '{}_trajectories_{}.txt')
+        while os.path.exists(traj_log.format(samp_obj.label, n)):
             n += 1
-        self.traj_log = traj_log.format(n)
+        self.traj_log = traj_log.format(samp_obj.label, n)
 
         # Timing
         self.qchem_runtime = 0.
@@ -252,22 +252,6 @@ if __name__ == '__main__':
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     
     x = 0./syms
-    #xyz = geom.get_geometry_at(x)
-    #with open(os.path.join(os.path.expandvars("$SCRATCH"),"geom_evol_test.txt"),'a') as f:
-    #    for i in range(100):
-    #        f.write(str(7)+'\n')
-    #        f.write("#Position"+str(geom.xcur)+'\n')
-    #        f.write(xyz+'\n')
-    #        #print(geom.xcur,'\n',xyz,'\n')
-    #        if i < 50:
-    #            xyz = geom.get_geometry_at(x+i*np.array([2*np.pi/50,4*np.pi/50]))
-    #        elif i > 50:
-    #            xyz = geom.get_geometry_at(x-i*np.array([4*np.pi/50,2*np.pi/50]))
-    #        elif i == 50:
-    #            xyz = geom.get_geometry_at(geom.xcur)
-
-
-    tic1 = time.perf_counter()
     xyz = geom.get_geometry_at( 0*np.pi/syms )
     grad = geom.get_energy_grad_at( geom.xcur )
     toc1 = time.perf_counter()

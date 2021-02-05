@@ -2,6 +2,7 @@
 import os
 import logging
 import subprocess
+from subprocess import DEVNULL, STDOUT
 
 from ape.qchem import QChemLog
 from tnuts.job.inputs import fine, fine_zeolite, input_script
@@ -77,6 +78,11 @@ class Job(object):
             file_name = '{}.q.out'.format(self.file_name)
             logging.info('{} exists, so this calculation is passed !'.format(file_name))
         else:
-            proc = subprocess.Popen(['qchem -nt {cpus} {input_path} {output_path}'.format(cpus=self.ncpus, input_path=self.input_path, output_path=self.output_path)], shell=True)
+            proc = subprocess.Popen(\
+                    ['qchem -nt {cpus} {input_path} {output_path}'.format(
+                        cpus=self.ncpus, 
+                        input_path=self.input_path,
+                        output_path=self.output_path)],
+                    shell=True, stdout=DEVNULL, stderr=STDOUT)
             proc.wait()
         subprocess.Popen(['rm {input_path}'.format(input_path=self.input_path)], shell=True)

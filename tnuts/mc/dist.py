@@ -8,6 +8,46 @@ from pymc3.distributions.dist_math import bound
 #import pymc3_ext as pmx
 #from pymc3_ext.distributions import transforms as tr
 
+#class Angle(pm.Continuous):
+#    """An angle constrained to be in the range -pi to pi
+#    The actual sampling is performed in the two dimensional vector space
+#    ``(sin(theta), cos(theta))`` so that the sampler doesn't see a
+#    discontinuity at pi.
+#    """
+#    def __init__(self, *args, **kwargs):
+#        transform = kwargs.pop("transform", None)
+#        if transform is None:
+#            if "regularized" in kwargs:
+#                transform = tr.AngleTransform(
+#                    regularized=kwargs.pop("regularized")
+#                )
+#            else:
+#                transform = tr.angle
+#        kwargs["transform"] = transform
+#
+#        shape = kwargs.get("shape", None)
+#        if shape is None:
+#            testval = 0.0
+#        else:
+#            testval = np.zeros(shape)
+#        kwargs["testval"] = kwargs.pop("testval", testval)
+#        super().__init__(*args, **kwargs)
+#
+#    def _random(self, size=None):
+#        return np.random.uniform(-np.pi, np.pi, size)
+#
+#    def random(self, point=None, size=None):
+#        return generate_samples(
+#            self._random,
+#            dist_shape=self.shape,
+#            broadcast_shape=self.shape,
+#            size=size,
+#        )
+#
+#    def logp(self, value):
+#        return tt.zeros_like(tt.as_tensor_variable(value))
+
+
 class MyDist(pm.Continuous):
     def __init__(self, logp, modes, T, *args, **kwargs):
         super(MyDist, self).__init__(*args, **kwargs)

@@ -7,7 +7,58 @@
 #####################################################
 import pymc3 as pm
 import numpy as np
+from tnuts.mc.ops import LogPrior
 from pymc3.step_methods.hmc.quadpotential import QuadPotentialFull
+
+def get_priors_dict(modes, T):
+    from scipy.integrate import quad
+    import rmgpy.constants as constants
+    beta = 1/(constants.kB*T)*constants.E_h
+    prior_dict = {}
+    for prior in ['umvt', 'ho', 'uniform']:
+        prior_dict[prior] = {}   
+        sym_nums = np.array([mode.get_symmetry_number() for mode in modes])
+        if prior=='umvt':
+            fns = np.array([mode.get_spline_fn() for mode in modes])
+            variances = []
+            fullvar = []
+            rho = []
+            Z = 1
+            for fn,s in zip(fns,sym_nums):
+                z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
+                p = lambda phi: np.power(z,-1)*np.exp(-beta*fn(phi))
+                varx = quad(lambda y:\
+                        np.power(np.cos(y), 2)*p(y),
+                        -np.pi/s, np.pi/s)[0] -\
+                                np.power(quad(lambda y: \
+                                np.cos(y)*p(y),
+                                -np.pi/s, np.pi/s)[0],2)
+                vary = quad(lambda y:\
+                        np.power(np.sin(y), 2)*p(y),
+                        -np.pi/s, np.pi/s)[0] -\
+                                np.power(quad(lambda y: \
+                                np.sin(y)*p(y),
+                                -np.pi/s, np.pi/s)[0],2)
+                var = quad(lambda y:\
+                        np.power(y, 2)*p(y),
+                        -np.pi/s, np.pi/s)[0] -\
+                                np.power(1/z*quad(lambda y: \
+                                y*p(y),
+                                -np.pi/s, np.pi/s)[0],2)
+                
+                variances.append(np.array([varx, vary]))
+                fullvar.append(var)
+                Z *= z
+            print("Variances are:", np.array(variances).ravel('F'))
+            prior_dict[prior]['cov'] = np.array(variances)
+            prior_dict[prior]['full_cov'] = np.array(fullvar)
+            prior_dict[prior]['logp'] = LogPrior(fns, T, sym_nums)
+            prior_dict[prior]['Z'] = Z
+        elif prior == 'ho':
+            pass
+        elif prior == 'uniform':
+            pass
+    return prior_dict
 
 def get_initial_values(modes, T):
     from scipy.integrate import quad
@@ -42,6 +93,18 @@ def get_initial_mass_matrix(modes, T):
                 np.power(1/Z*quad(lambda y: y*np.exp(-beta*fn(y)), -np.pi/s, np.pi/s)[0],2)
         Zs.append(Z)
         variances.append(var)
+    ########
+    variances = []
+    for fn,s in zip(fns,sym_nums):
+        Z = quad(lambda x: np.exp(-beta*fn(x)), -np.pi/s, np.pi/s)[0]
+        varx = np.power(Z,-1)*quad(lambda y:\
+                np.power(np.cos(y), 2)*np.exp(-beta*fn(y)),
+                -np.pi/s, np.pi/s)[0]
+        vary = np.power(Z,-1)*quad(lambda y:\
+                np.power(np.sin(y), 2)*np.exp(-beta*fn(y)),
+                -np.pi/s, np.pi/s)[0]
+        variances.append(varx)
+        variances.append(vary)
     return np.array(variances)
 
 def get_sample_cov(trace, model):

@@ -124,7 +124,7 @@ class MCThermoJob:
         #################################################
         # Calculate  torsional kinetic (T) contribution #
         #################################################
-        D = get_mass_matrix(self.trace, self.model, self.T,
+        D = get_mass_matrix(self.trace, self.T,
                 self.Thermo.mode_dict,
                 protocol="uncoupled") # SI
         R = 1.985877534e-3       # kcal/mol.K

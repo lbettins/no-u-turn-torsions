@@ -13,7 +13,7 @@ import theano.tensor as tt
 from scipy.integrate import quad
 from scipy import stats
 from pymc3.distributions import Interpolated
-from tnuts.ops import Energy
+from tnuts.mc.ops import Energy
 from tnuts.molconfig import get_energy_at, get_grad_at
 from tnuts.mode import dicts_to_NModes
 from tnuts.geometry import Geometry
@@ -38,6 +38,7 @@ def main():
     project_directory = os.path.abspath(os.path.dirname(args.file))
     with open(os.path.join(project_directory,pkl), 'rb') as pklfile:
         pkl_dict = pickle.load(pklfile)
+    print(pkl_dict)
     #samp_obj = SamplingJob(
     #        input_file='/Users/lancebettinson/Documents/entropy/um-vt/EtOH/EtOH_hf.out',
     #        label='EtOH_hf',
@@ -45,18 +46,20 @@ def main():
     #        protocol='TNUTS',
     #        level_of_theory='HF', basis='sto-3g', thresh=0.5)
     print(pkl_dict)
+    #T = pkl_dict['T']
+    T = 300
+    plot_MC_torsion_result(pkl_dict['trace'], pkl_dict['tmodes'], T)
+    return
     samp_obj = pkl_dict['samp_obj']
-    T = pkl_dict['T']
     try:
-        LogP, Z, modes = generate_umvt_logprior(samp_obj,pkl_dict['T'])
+        #LogP, Z, modes = generate_umvt_logprior(samp_obj,pkl_dict['T'])
+        logP, Z, modes = generate_umvt_logprior(samp_obj, T)
         print(Z,'versus',Z*np.mean(pkl_dict['trace']['a']))
     except FileNotFoundError:
         Z = pkl_dict['Z']
         Q = pkl_dict['Q']
         modes = None    # No modes, just plot the histogram
         print(Z,"versus",Q)
-    plot_MC_torsion_result(pkl_dict['trace'],modes,pkl_dict['T'])
-    
 
 def generate_umvt_logprior(samp_obj, T):
     from tnuts.ops import LogPrior

@@ -9,7 +9,7 @@ import os
 from ape.sampling import SamplingJob
 from ape.qchem import QChemLog
 from tnuts.qchem import get_level_of_theory
-from tnuts.main import NUTS_run
+from tnuts.main import MCMCTorsions, NUTS_run
 
 def parse_command_line_arguments(command_line_args=None):
     
@@ -61,9 +61,6 @@ def main():
             imaginary_bonds.append([int(atom1), int(atom2)])
 
     label = input_file.split('.')[0]
-    print(label)
-    print(input_file)
-    print(project_directory)
     Log = QChemLog(os.path.join(project_directory, input_file))
     level_of_theory_kwargs = get_level_of_theory(Log)
     samp_object = SamplingJob(
@@ -76,9 +73,21 @@ def main():
     samp_object.parse()
     # With APE updates, should edit APE sampling.py to [only] sample torsions
     #xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
+    priors = ['umvt']
+    methods = ['NUTS', 'HMC', 'MH']
 
-    NUTS_run(samp_object, T, nsamples=nsamples, nchains=nchains,
-        tune=nburn, ncpus=ncpus, hpc=hpc)
+    sampling_kwargs = dict(draws=nsamples, chains=nchains, tune=nburn)
+    MCObj = MCMCTorsions(samp_object, T, sampling_kwargs, hpc=hpc, ncpus=ncpus)
+
+    step_kwargs = dict() 
+    methods = ['NUTS']
+    priors=['umvt']
+    for prior in priors:
+        for method in methods:
+            MCObj.sample(prior, method, **step_kwargs)
+            #NUTS_run(samp_object, T, nsamples=nsamples, nchains=nchains,
+            #    tune=nburn, ncpus=ncpus, hpc=hpc,
+            #    prior=prior, method=method)
 
 if __name__ == '__main__':
     main()
