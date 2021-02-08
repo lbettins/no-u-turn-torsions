@@ -90,12 +90,12 @@ class MCMCTorsions:
         return model
 
     def sample(self, prior='umvt', method='NUTS',
-            res=18.0, retrain=False, train=True, **step_kwargs):
+            res=22.0, retrain=False, train=True, **step_kwargs):
         model = self.get_model(prior)
         if retrain:
             self.train_model()
         variances = self.read_cov(method, prior)
-        step_scale = res*(np.pi/180) / (self.n_d)**(0.25)
+        #step_scale = res*(np.pi/180) / (self.n_d)**(0.25)
         step_scale = res*np.pi/180 / (1/self.n_d)**0.25
         if method == 'NUTS':
             with model:
@@ -115,6 +115,12 @@ class MCMCTorsions:
         with model:
             trace = pm.sample(step=step, cores=1, **self.mckwargs)
         self.pickle(trace, prior, method, model, dict(**step_kwargs))
+        myfile='corner_{ns}_{method}_{prior}.png'.format(
+                ns=self.mckwargs['draws'],
+                method=method, prior=prior)
+        mypath = os.path.join(self.samp_obj.output_directory,
+                    'results', self.samp_obj.label, method, prior, myfile)
+        save_plot(trace, self.tmodes, self.T, mypath)
         if not self.hpc:
             plot_MC_torsion_result(trace, self.tmodes, self.T)
             #full_cov = self.priors_dict[prior]['full_cov']
@@ -135,13 +141,13 @@ class MCMCTorsions:
         cov_path = self.cov_path.format(method,prior) + '.npy'
         if not os.path.exists(cov_path):
             print(cov_path,
-                    "doesn't exist! Auto-training 2000 iters")
+                    "doesn't exist! Auto-training 500 iters")
             self.train_model(method, prior)
         with open(cov_path, 'rb') as f:
             cov = np.load(f)
         return cov
 
-    def train_model(self, method, prior, res=18.):
+    def train_model(self, method, prior, res=22.):
         test_model = self.get_model(prior, test=True)
         with test_model:
             # True step size is scaled down
@@ -185,10 +191,10 @@ class MCMCTorsions:
                     step_scale=step_scale, adapt_step_size=False,
                     target_accept=t_a)
             train_trace = pm.sample(step=step, cores=1,
-                    chains=1, draws=1, tune=2000,
+                    chains=1, draws=1, tune=500,
                     discard_tuned_samples=False)
             cov = pm.trace_cov(train_trace)
-            print("Step size is",train_trace.get_sampler_stats("step_size_bar"))
+            #print("Step size is",train_trace.get_sampler_stats("step_size_bar"))
         self.write_(cov, method, prior)
 
     def compute_thermo(self, trace, T):
@@ -339,7 +345,8 @@ def pickle_the_model(trace, model, Z, samp_obj, geom, tmodes,
             step_kwargs_dict=step_kwargs_dict, **samp_kwargs)
     model_dict = {'model' : model, 'trace' : trace,\
             'n' : nsamples, 'chains' : nchains, 'cores' : ncpus,\
-            'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'samp_obj' : samp_obj,\
+            'tune' : tune, 'Q' : Q, 'Z' : Z, 'T' : T, 'sampT' : T,\
+            'samp_obj' : samp_obj,\
             'geom_obj' : geom, 'modes' : tmodes}
     trace_file = '{label}_{method}_{prior}-prior_{T}K_{nc}_{nburn}_{ns}_{n}_trace.p'
     n = 0
@@ -389,6 +396,48 @@ def generate_logprior(samp_obj, T, prior):
     elif prior=='uniform':
         pass
 
+
+def save_plot(trace, NModes, T, abs_path_to_figure):
+    import matplotlib.pyplot as plt
+    beta = 1/(constants.kB*T)*constants.E_h
+    if NModes is not None:
+        n_d = len(NModes)
+        logpriors = [mode.get_spline_fn() for mode in NModes]
+        syms = np.array([mode.get_symmetry_number() for mode in NModes])
+        xvals = [np.linspace(-np.pi/sig, np.pi/sig, 500) for sig in syms]
+        yvals = [np.exp(-beta*V(xvals[i]))/quad(lambda x: np.exp(-beta*V(x)),
+            -np.pi/sig,np.pi/sig)[0]\
+                for i,V,sig in zip(range(n_d),logpriors,syms)]
+        for i in range(n_d):
+            print("Symmetry values for mode",i,"is",syms[i])
+            plt.figure(2)
+            fullx = np.linspace(-np.pi,np.pi,500)
+            plt.plot(fullx, logpriors[i](fullx))
+    else:
+        n_d = len(trace.x[0])
+        logpriors = None
+        syms = np.ones(n_d)
+    if n_d >= 2:
+        import corner
+        hist_kwargs = dict(density=True)
+        xsamples = [trace['x']%(2*np.pi/syms)]
+        xsamples = np.array([np.array([xi if xi < np.pi/sym \
+                                else xi-2*np.pi/sym \
+                                for sym,xi in zip(syms,x)]) for x in xsamples[0]])
+        #print(xsamples)
+        samples=np.vstack(xsamples)
+        figure = corner.corner(samples,
+                labels=["$x_{{{0}}}$".format(i) for i in range(1, n_d+1)],
+                hist_kwargs=hist_kwargs)
+
+        # Extract the axes
+        axes = np.array(figure.axes).reshape((n_d, n_d))
+        # Loop over the diagonal
+        if NModes is not None:
+            for i in range(n_d):
+                ax = axes[i, i]
+                ax.plot(xvals[i],yvals[i], color="b")
+    plt.savefig(abs_path_to_figure, format='png')
 
 def plot_MC_torsion_result(trace, NModes=None, T=300):
     import matplotlib.pyplot as plt
