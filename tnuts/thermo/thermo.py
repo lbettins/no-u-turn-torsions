@@ -164,7 +164,8 @@ class MCThermoJob:
             SV = R*(np.log(QV) + np.mean(self.trace.bE)*self.rat)*1000\
                 # S in cal/mol.K
             CvV = beta/self.T*\
-                    (np.var(self.trace.bE/betac))*Hartree2kcal*1000 # Cv in cal/mol.K
+                    (np.var(self.trace.bE/betac))\
+                    *Hartree2kcal*1000 # Cv in cal/mol.K
             QtclassC = QV*QT
             EtclassC = EV+ET
             StclassC = SV+ST
