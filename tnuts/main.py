@@ -233,10 +233,13 @@ class MCMCTorsions:
         # SAVE NP ARRAYS FOR EASE
         Efile = 'E{}.npy'.format(n)
         phifile = 'phi{}.npy'.format(n)
+        afile = 'a{}.npy'.format(n)
         Epath = os.path.join(pickle_path, Efile)
         phipath = os.path.join(pickle_path, phifile)
+        apath = os.path.join(pickle_path, afile)
         np.save(Epath, trace.bE)
         np.save(phipath, trace.x)
+        np.save(apath, trace.a)
         with open(os.path.join(pickle_path,
             trace_file.format(**pkl_kwargs)), 'wb') as f:
             pickle.dump(model_dict, f, protocol=4)
