@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from arkane.output import prettify
 from ape.FitPES import from_sampling_result, cubic_spline_interpolations
+from ape.sampling import SamplingJob
 from ape.schrodinger import SetAnharmonicH
 from ape.statmech import Statmech
 from ape.thermo import ThermoJob
@@ -14,6 +15,7 @@ from tnuts.mode import dict_to_NMode
 from tnuts.thermo.common import get_tors_freqs, get_sb_freqs, solvHO, solvCHO,\
         solvUMClass, get_mass_matrix, get_data_frame
 from tnuts.mc.metrics import get_sample_cov
+from tnuts.stats import create_dfs
 
 class MCThermoJob:
     """
@@ -24,24 +26,45 @@ class MCThermoJob:
     S   [=] cal/mol.K
     Cv  [=] cal/mol.K
     """
-    def __init__(self, trace, T, sampT=None, samp_obj=None, model=None,
+    def __init__(self, results_directory, T,
+            sampT=300, samp_obj=None, model=None,
             P=101325,
             t_protocols=['PG','UMVT','HO'], t_subprotocols=['C','U'],
             sb_protocols=['HO','UMVT'], sb_subprotocols=['HO','UMVT']):
+        self.resdir = results_directory
         self.model = model
         self.sampT = sampT
         self.T = T
         self.rat = self.sampT/self.T
         self.P = P
-        self.trace = trace
+        ###
+        self.acm, self.bEcm, self.Ecvar = create_dfs(self.resdir,
+                sampT=self.sampT)
+        ###
         self.samp_obj = samp_obj
+        # Reiteration of 'load_save' from ape.statmech
+        # Care should be taken to move '.csv' sampling result and the
+        # '.out' input file to the results directory
+        if self.samp_obj is None:
+            for f in os.listdir(self.resdir):
+                if not '.out' in f:
+                    continue
+                input_f = f
+                break
+            input_file = os.path.join(self.resdir, input_f)
+            label = input_f.split('.')[0]
+            self.samp_obj = SamplingJob(label, input_file, protocol='UMVT')
+            self.samp_obj.parse()
         self.conformer = self.samp_obj.conformer
         self.label = self.samp_obj.label
         self.Thermo = ThermoJob(self.label, self.samp_obj.input_file,
-                output_directory=self.samp_obj.output_directory, P=self.P)
+                output_directory=self.resdir, P=self.P)
         self.Thermo.load_save()
-        self.tmodes = self.samp_obj.tmodes
-        self.NModes = self.samp_obj.NModes
+        #self.tmodes = dicts_to_NModes(self.Thermo.mode_dict,
+        #        self.Thermo.energy_dict,
+        #        xyz_dict=None,
+        #        just_tors=True)
+        #self.NModes
         self.t_protocols = np.atleast_1d(t_protocols)
         self.t_subprotocols = np.atleast_1d(t_subprotocols)
         self.sb_protocols = np.atleast_1d(sb_protocols)
@@ -57,7 +80,7 @@ class MCThermoJob:
         # "s15" |"trns"|  NaN |  NaN|  NaN   |  NaN  |  Ζ | Η | Θ |  Ι | Κ 
         # "s20" |"tors"| "pg" | "uu"|  "ho"  |  "ho" |  λ | μ | ν |  ξ | π 
         # "s1"  |"tors"|"umvt"|  NaN|  NaN   |  NaN  |  Λ | Μ | Ν |  Ξ | Π 
-        self.csv = os.path.join(self.samp_obj.output_directory, "thermo{T}_{label}.csv".format(T=self.T,label=self.label))
+        self.csv = os.path.join(self.resdir, "thermo{T}_{label}.csv".format(T=self.T,label=self.label))
         self.total_thermo = get_data_frame(self.csv)
         self.data_frame = pd.DataFrame({'mode' : []})
 
@@ -114,9 +137,8 @@ class MCThermoJob:
             raise TypeError("Invalid subprotocol")
         ntors = self.samp_obj.n_rotors
         beta = 1/(constants.kB*self.T)*constants.E_h # beta in Hartree
-        betac = beta*self.rat
+        #betac = beta*self.rat
         print("Ratio of temperatures is", self.rat)
-        print("N torsions is", ntors)
         # Unit conversion constants:
         J2cal = 1./4.184    # 1cal / 4.184J
         Hartree2kcal = constants.E_h*\
@@ -124,7 +146,7 @@ class MCThermoJob:
         #################################################
         # Calculate  torsional kinetic (T) contribution #
         #################################################
-        D = get_mass_matrix(self.trace, self.T,
+        D = get_mass_matrix(None, self.T,
                 self.Thermo.mode_dict,
                 protocol="uncoupled") # SI
         R = 1.985877534e-3       # kcal/mol.K
@@ -155,21 +177,34 @@ class MCThermoJob:
             return EtclassU, StclassU, CvtclassU, QtclassU
         elif 'C' in subprotocol:
             # Calculate coupled torsional PES contribution for all tors
-            QV = Qv*np.power(np.mean(self.trace.a), self.rat)
-            print("Kinetic pf, coupled:", QT)
-            print("Potential partition function, un/coupled:", Qv, QV)
-            print("Product:", QT*QV)
+            #QV = Qv*np.power(np.mean(self.trace.a), self.rat)
+            #print("Kinetic pf, coupled:", QT)
+            #print("Potential partition function, un/coupled:", Qv, QV)
+            #print("Product:", QT*QV)
             ############# CHECK THIS ####################
-            EV = np.mean(self.trace.bE*self.rat)*R*self.T # E in kcal/mol
-            SV = R*(np.log(QV) + np.mean(self.trace.bE)*self.rat)*1000\
-                # S in cal/mol.K
-            CvV = beta/self.T*\
-                    (np.var(self.trace.bE/betac))\
-                    *Hartree2kcal*1000 # Cv in cal/mol.K
-            QtclassC = QV*QT
-            EtclassC = EV+ET
-            StclassC = SV+ST
-            CvtclassC = CvV+CvT
+            #EV = np.mean(self.trace.bE*self.rat)*R*self.T # E in kcal/mol
+            #SV = R*(np.log(QV) + np.mean(self.trace.bE)*self.rat)*1000\
+            #    # S in cal/mol.K
+            #CvV = beta/self.T*\
+            #        (np.var(self.trace.bE/betac))\
+            #        *Hartree2kcal*1000 # Cv in cal/mol.K
+            #QtclassC = QV*QT
+            #EtclassC = EV+ET
+            #StclassC = SV+ST
+            #CvtclassC = CvV+CvT
+            ############################################
+            # CUMULATIVE MEAN ##########################
+            ############################################
+            Qcm = Qv*np.power(self.acm, self.rat) * QT
+            print(Qcm)
+            print(np.log(Qcm))
+            Qcm.columns = Qcm.columns.str.replace("a", "E")
+            Ecm = self.bEcm * self.rat*R*self.T + ET
+            Scm = R*(np.log(Qcm).add(self.bEcm*self.rat))*1000 + ST # cal/mol.K
+            #print(Scm)
+            Cvcm = beta/self.T*\
+                    self.Ecvar*Hartree2kcal*1000 + CvT # cal/mol.K
+            return Ecm, Scm, Cvcm, Qcm
             return EtclassC, StclassC, CvtclassC, QtclassC
 
     def calcPGFactor(self, sb_protocol, sb_subprotocol):
@@ -253,12 +288,39 @@ class MCThermoJob:
             # Calculate SB Ratio (F)
             v, qc, F, E0, DE, DS, DCv =\
                     self.calcPGFactor(sb_protocol, sb_subprotocol)
+            ### Data frames if coupled
             E0 = E0
             E = DE + Etclass
             S = DS + Stclass
             Cv = DCv + Cvtclass
             Q = F*Qtclass
             Qc = Qtclass
+            ###
+            # SAVE THEM!!!
+            if subprotocol == 'C':
+                if sb_protocol == 'UMVT':
+                    R = 1.985877534e-3       # kcal/mol.K
+                    Hcm = E - E0 + self.trans_dict['e'] + self.rot_dict['e'] + R*self.T
+                    Hcm += self.ho_dict['e'] - self.ho_dict['e0']
+                    Scm = S + self.trans_dict['s'] + self.rot_dict['s'] +\
+                            self.ho_dict['s']
+                    Cvcm = Cv + self.trans_dict['cv'] + self.rot_dict['cv'] +\
+                            self.ho_dict['cv']
+                    Qpgcm = Q * self.ho_dict['q']
+
+                    name = os.path.join(self.resdir,'{}_{}K.csv')
+                    Hcm.to_csv(name.format('H',self.T))
+                    Scm.to_csv(name.format('S',self.T))
+                    Cvcm.to_csv(name.format('Cv',self.T))
+                    Qpgcm.to_csv(name.format('Qpg',self.T))
+                    ####
+                #For storing in data frame
+                E = np.mean(E.iloc[-1])
+                S = np.mean(S.iloc[-1])
+                Cv = np.mean(Cv.iloc[-1])
+                Q = np.mean(Q.iloc[-1])
+                Qc = np.mean(Qtclass.iloc[-1])
+                ####
         elif protocol == "UMVT":
             E0, E, S, Cv, Q, F, Qc = 0, 0, 0, 0, 1, None, None
             for mode in sorted(self.Thermo.mode_dict.keys()):
@@ -330,6 +392,10 @@ class MCThermoJob:
                 'sb_protocol' : protocol,
                 'e0' : ZPE, 'e' : E_int, 's' : S_int, 'cv' : Cv_int,
                     'q' : Q_int}
+        if protocol=='UMVT':
+            self.umn_dict = sb_dict
+        elif protocol=='HO':
+            self.ho_dict = sb_dict
         self.data_frame = self.data_frame.append(sb_dict, ignore_index=True)
 
     def calcTransThermo(self):
@@ -339,10 +405,11 @@ class MCThermoJob:
         S_trans = self.conformer.modes[0].get_entropy(self.T) / 4.184 - constants.R * math.log(self.P / 101325) / 4.184
         Cv_trans = 1.5 * constants.R / 4184 * 1000
         Q_trans = self.conformer.modes[0].get_partition_function(self.T)
-        trans_dict = {'mode' : 'trans', 'T' : self.T, 
+        self.trans_dict = {'mode' : 'trans', 'T' : self.T, 
                 'e' : E_trans, 's' : S_trans,
                     'cv' : Cv_trans, 'q' : Q_trans}
-        self.data_frame = self.data_frame.append(trans_dict, ignore_index=True)
+        self.data_frame = self.data_frame.append(self.trans_dict,
+                ignore_index=True)
 
     def calcRotThermo(self):
         # Calculate global rotation (rigid rotor)
@@ -351,10 +418,11 @@ class MCThermoJob:
         S_rot = self.conformer.modes[1].get_entropy(self.T) / 4.184
         Cv_rot = self.conformer.modes[1].get_heat_capacity(self.T) / 4.184
         Q_rot = self.conformer.modes[1].get_partition_function(self.T)
-        rot_dict = {'mode' : 'rot', 'T' : self.T,
+        self.rot_dict = {'mode' : 'rot', 'T' : self.T,
                 'e' : E_rot, 's' : S_rot, 'cv' :
                     Cv_rot, 'q' : Q_rot}
-        self.data_frame = self.data_frame.append(rot_dict, ignore_index=True)
+        self.data_frame = self.data_frame.append(self.rot_dict,
+                ignore_index=True)
 
     def calcVibThermo(self, sb_protocol="HO", t_protocol="PG", t_subprotocol="CC",
             sb_subprotocol="MC"):

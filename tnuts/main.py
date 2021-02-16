@@ -118,8 +118,9 @@ class MCMCTorsions:
         myfile='corner_{ns}_{method}_{prior}.png'.format(
                 ns=self.mckwargs['draws'],
                 method=method, prior=prior)
+        results = 'results' if self.hpc else 'test-results'
         mypath = os.path.join(self.samp_obj.output_directory,
-                    'results', self.samp_obj.label, method, prior, myfile)
+                    results, self.samp_obj.label, method, prior, myfile)
         save_plot(trace, self.tmodes, self.T, mypath)
         if not self.hpc:
             plot_MC_torsion_result(trace, self.tmodes, self.T)
