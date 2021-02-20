@@ -38,7 +38,7 @@ class MCThermoJob:
         self.rat = self.sampT/self.T
         self.P = P
         ###
-        self.acm, self.bEcm, self.Ecvar = create_dfs(self.resdir,
+        self.acm, self.bEcm, self.Ecvar, self.S = create_dfs(self.resdir,
                 sampT=self.sampT)
         ###
         self.samp_obj = samp_obj
@@ -195,12 +195,15 @@ class MCThermoJob:
             ############################################
             # CUMULATIVE MEAN ##########################
             ############################################
-            Qcm = Qv*np.power(self.acm, self.rat) * QT
-            print(Qcm)
-            print(np.log(Qcm))
-            Qcm.columns = Qcm.columns.str.replace("a", "E")
+            #Qcm = Qv*np.power(self.acm, self.rat) * QT
+            #Qcm = self.qcm * QT
+            #print(Qcm)
+            #print(np.log(Qcm))
+            #Qcm.columns = Qcm.columns.str.replace("a", "E")
             Ecm = self.bEcm * self.rat*R*self.T + ET
-            Scm = R*(np.log(Qcm).add(self.bEcm*self.rat))*1000 + ST # cal/mol.K
+            #Scm = R*(np.log(Qcm).add(self.bEcm*self.rat))*1000 + ST # cal/mol.K
+            Scm = R*self.S*1000
+            Qcm = np.exp(-self.S - Ecm)
             #print(Scm)
             Cvcm = beta/self.T*\
                     self.Ecvar*Hartree2kcal*1000 + CvT # cal/mol.K
