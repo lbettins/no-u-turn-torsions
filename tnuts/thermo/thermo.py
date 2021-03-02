@@ -38,8 +38,9 @@ class MCThermoJob:
         self.rat = self.sampT/self.T
         self.P = P
         ###
-        self.acm, self.bEcm, self.Ecvar, self.S = create_dfs(self.resdir,
-                sampT=self.sampT)
+        self.acm, self.bEcm, self.Ecvar,\
+                self.DEcm, self.S = create_dfs(self.resdir,
+                        sampT=self.sampT)
         ###
         self.samp_obj = samp_obj
         # Reiteration of 'load_save' from ape.statmech
@@ -195,15 +196,20 @@ class MCThermoJob:
             ############################################
             # CUMULATIVE MEAN ##########################
             ############################################
-            #Qcm = Qv*np.power(self.acm, self.rat) * QT
+            Qcm = Qv*np.power(self.acm, self.rat) #* QT
+            print("partition fn, fperturb;",Qcm)
+            print("prior partition:",Qv)
             #Qcm = self.qcm * QT
             #print(Qcm)
             #print(np.log(Qcm))
-            #Qcm.columns = Qcm.columns.str.replace("a", "E")
+            Qcm.columns = Qcm.columns.str.replace("a", "E")
             Ecm = self.bEcm * self.rat*R*self.T + ET
-            #Scm = R*(np.log(Qcm).add(self.bEcm*self.rat))*1000 + ST # cal/mol.K
-            Scm = R*self.S*1000
-            Qcm = np.exp(-self.S - Ecm)
+            Scm = R*(np.log(Qcm).add(self.bEcm*self.rat))*1000 + ST # cal/mol.K
+            
+            print("Entropy is:", Scm)
+            print("kinetic entropy is", ST)
+            #Scm = R*self.S*1000
+            #Qcm = np.exp(-self.S - Ecm)
             #print(Scm)
             Cvcm = beta/self.T*\
                     self.Ecvar*Hartree2kcal*1000 + CvT # cal/mol.K
@@ -302,6 +308,7 @@ class MCThermoJob:
             # SAVE THEM!!!
             if subprotocol == 'C':
                 if sb_protocol == 'UMVT':
+                    print("PG Entropy is", DS)
                     R = 1.985877534e-3       # kcal/mol.K
                     Hcm = E - E0 + self.trans_dict['e'] + self.rot_dict['e'] + R*self.T
                     Hcm += self.ho_dict['e'] - self.ho_dict['e0']

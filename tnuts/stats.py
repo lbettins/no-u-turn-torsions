@@ -29,16 +29,20 @@ def create_dfs(dirname, sampT=300):
     # RAW DATA FRAMES ACROSS ALL CHAINS
     Edf = pd.DataFrame(Edict).replace(0.000000, np.nan)
     adf = pd.DataFrame(adict)
+    DEdf = np.log(adf)
     Edf.to_csv(os.path.join(dirname,'Edf.csv'))
     adf.to_csv(os.path.join(dirname,'adf.csv'))
+    DEdf.to_csv(os.path.join(dirname, 'DEdf.csv'))
 
     # CUMULATIVE MEAN DATA FRAMES ACROSS ALL CHAINS
     Ecm = Edf.expanding(axis=0).mean(skipna=True)
     acm = adf.expanding(axis=0).mean(skipna=True)
+    DEcm = DEdf.expanding(axis=0).mean(skipna=True)
     qcm = np.exp(-Edf).expanding(axis=0).mean(skipna=True)
     Ecm.to_csv(os.path.join(dirname,'Ecm.csv'))
     acm.to_csv(os.path.join(dirname,'acm.csv'))
     qcm.to_csv(os.path.join(dirname,'qcm.csv'))
+    DEcm.to_csv(os.path.join(dirname,'DEcm.csv)'))
     
     s = pd.DataFrame()
     for it in Edf.index:
@@ -70,7 +74,7 @@ def create_dfs(dirname, sampT=300):
 
     #Ecv.plot()
     #plt.show()
-    return acm, Ecm, Ecv, s
+    return acm, Ecm, Ecv, DEcm, s
     return Edf, adf, phidict
     
 if __name__ == "__main__":
