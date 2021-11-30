@@ -584,7 +584,12 @@ def dict_to_NMode(mode, m_dict, e_dict, xyz_dict,
         pass
 
     step = m_dict[mode]['step_size']
-    if samp_obj.protocol == 'UMVT' or samp_obj.protocol == 'UMN'or samp_obj.protocol == 'TNUTS':
+    if samp_obj is None:
+        samples = sorted(e_dict[mode].keys())
+        xvals = [sample*step for sample in samples] #in rads
+        vvals = [e_dict[mode][sample] for sample in samples] #in Hartree
+        geoms = None
+    elif samp_obj.protocol == 'UMVT' or samp_obj.protocol == 'UMN'or samp_obj.protocol == 'TNUTS':
         samples = sorted(e_dict[mode].keys())
         xvals = [sample*step for sample in samples] #in rads
         vvals = [e_dict[mode][sample] for sample in samples] #in Hartree
@@ -649,10 +654,12 @@ def dicts_to_NModes(m_dict, e_dict, xyz_dict,
         modes.append(nmode)
         if m_dict[mode]['mode'] == 'tors':
             tmodes.append(nmode)
-        if samp_obj.protocol == 'CMT':
-            continue_toggle = True   # Only need one NMode object w/vectorized quantities
-    samp_obj.NModes = modes
-    samp_obj.tmodes = tmodes
+        if samp_obj is not None:
+            if samp_obj.protocol == 'CMT':
+                continue_toggle = True   # Only need one NMode object w/vectorized quantities
+    if samp_obj is not None:
+        samp_obj.NModes = modes
+        samp_obj.tmodes = tmodes
     if just_tors:
         return tmodes
     return modes

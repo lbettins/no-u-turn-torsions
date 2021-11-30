@@ -8,6 +8,7 @@ import pymc3 as pm
 import rmgpy.constants as constants
 import copy
 from tnuts.common import log_trajectory
+from scipy.integrate import quad
 
 class LogPrior(tt.Op):
     itypes=[tt.dvector]
@@ -16,6 +17,9 @@ class LogPrior(tt.Op):
         self.beta = 1/(constants.kB*T)*constants.E_h
         self.Epriors = fn_array
         self.sym_ns = sym_n_array
+        self.logZs = [np.log(quad(lambda phi:\
+                np.exp(-self.beta*fn(phi)), -np.pi/s, np.pi/s)[0])\
+                for fn,s in zip(self.Epriors, self.sym_ns)]
         self.ndim = len(fn_array)
         self.dlogp = LogPriorGrad(self.Epriors, self.beta, self.ndim)
         self.count = 0
@@ -34,6 +38,7 @@ class LogPrior(tt.Op):
         grads = np.zeros(self.ndim)
         for i in range(self.ndim):
             result -= self.beta*self.Epriors[i](theta[i])
+            #        + self.logZs[i]
             grads[i] = -self.beta*self.Epriors[i](theta[i], 1)
         self.count += 1
         #log_trajectory(self.traj_log, theta, result, grads)
@@ -97,3 +102,18 @@ class GetGrad(tt.Op):
         #grad = self.get_grad(theta, self.ape_obj, n=self.n)
         grad = self.get_grad(theta, which="grad")
         outputs[0][0] = self.beta*grad
+
+class CalcI(tt.Op):
+    itypes = [tt.dvector]
+    otypes = [tt.dvector]
+    def __init__(self, geom):
+        self.geom = geom
+        self.calc_I = self.geom.calc_I
+
+    def perform(self, node, inputs, outputs):
+        theta, = inputs
+        #grad = self.get_grad(theta, self.ape_obj, n=self.n)
+        I = self.calc_I(theta)
+        outputs[0][0] = I
+
+

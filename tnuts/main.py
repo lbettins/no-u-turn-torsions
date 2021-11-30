@@ -12,7 +12,7 @@ import theano.tensor as tt
 from scipy.integrate import quad
 from scipy import stats
 from pymc3.distributions import Interpolated
-from tnuts.mc.ops import Energy, LogPrior
+from tnuts.mc.ops import Energy, LogPrior, CalcI
 from tnuts.mc.metrics import get_step_for_trace, get_initial_mass_matrix,\
         get_initial_values, get_priors_dict
 from tnuts.molconfig import get_energy_at, get_grad_at
@@ -78,6 +78,7 @@ class MCMCTorsions:
             energy_fn = lambda phi: -self.priors_dict['umvt']['logp'](phi)
         else:
             energy_fn = Energy(self.geom, self.beta)
+        calc_I_fn = CalcI(self.geom)
         with pm.Model() as model:
             x = pmx.Periodic('x', shape=self.n_d,
                     lower=-np.pi/self.syms,
@@ -86,11 +87,12 @@ class MCMCTorsions:
             bE = pm.Deterministic('bE', energy_fn(phi))
             DeltaE = bE + logp(phi)
             alpha = pm.Deterministic('a', np.exp(-DeltaE))
+            I = pm.Deterministic('I', calc_I_fn(phi))
             Pot = pm.Potential('pot', logpE(DeltaE))
         return model
 
     def sample(self, prior='umvt', method='NUTS',
-            res=22.0, retrain=False, train=True, **step_kwargs):
+            res=25.0, retrain=False, train=True, **step_kwargs):
         model = self.get_model(prior)
         if retrain:
             self.train_model()
@@ -128,11 +130,6 @@ class MCMCTorsions:
             def flat_t(var):
                 x = trace[str(var)]
                 return x.reshape((x.shape[0], np.prod(x.shape[1:], dtype=int)))
-            #print("Predicted full cov:", np.diag(
-            #    self.priors_dict[prior]['full_cov']))
-            #print("Actual full cov:", pm.trace_cov(trace, model=model))
-            #print("Actual full cov:", np.cov(trace.x.T))
-
         return trace
 
     def write_(self, cov, method, prior):
@@ -195,7 +192,6 @@ class MCMCTorsions:
                     chains=1, draws=1, tune=500,
                     discard_tuned_samples=False)
             cov = pm.trace_cov(train_trace)
-            #print("Step size is",train_trace.get_sampler_stats("step_size_bar"))
         self.write_(cov, method, prior)
 
     def compute_thermo(self, trace, T):
@@ -235,18 +231,19 @@ class MCMCTorsions:
         Efile = 'E{}.npy'.format(n)
         phifile = 'phi{}.npy'.format(n)
         afile = 'a{}.npy'.format(n)
+        Ifile = 'I{}.npy'.format(n)
         Epath = os.path.join(pickle_path, Efile)
         phipath = os.path.join(pickle_path, phifile)
         apath = os.path.join(pickle_path, afile)
+        Ipath = os.path.join(pickle_path, Ifile)
         np.save(Epath, trace.bE)
         np.save(phipath, trace.x)
         np.save(apath, trace.a)
+        np.save(Ipath, trace.I)
         with open(os.path.join(pickle_path,
             trace_file.format(**pkl_kwargs)), 'wb') as f:
             pickle.dump(model_dict, f, protocol=4)
         print("File written.")
-
-
 
 def NUTS_run(samp_obj,T,
         nsamples=1000, tune=200, nchains=1, ncpus=4, hpc=False,

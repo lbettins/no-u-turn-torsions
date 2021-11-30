@@ -29,14 +29,28 @@ def create_dfs(dirname, sampT=300):
     # RAW DATA FRAMES ACROSS ALL CHAINS
     Edf = pd.DataFrame(Edict).replace(0.000000, np.nan)
     adf = pd.DataFrame(adict)
+    DEdf = np.log(adf)
     Edf.to_csv(os.path.join(dirname,'Edf.csv'))
     adf.to_csv(os.path.join(dirname,'adf.csv'))
+    DEdf.to_csv(os.path.join(dirname, 'DEdf.csv'))
 
     # CUMULATIVE MEAN DATA FRAMES ACROSS ALL CHAINS
     Ecm = Edf.expanding(axis=0).mean(skipna=True)
     acm = adf.expanding(axis=0).mean(skipna=True)
+    DEcm = DEdf.expanding(axis=0).mean(skipna=True)
+    qcm = np.exp(-Edf).expanding(axis=0).mean(skipna=True)
     Ecm.to_csv(os.path.join(dirname,'Ecm.csv'))
     acm.to_csv(os.path.join(dirname,'acm.csv'))
+    qcm.to_csv(os.path.join(dirname,'qcm.csv'))
+    DEcm.to_csv(os.path.join(dirname,'DEcm.csv)'))
+    
+    s = pd.DataFrame()
+    for it in Edf.index:
+        miniEdf = Edf[:(it+1)]
+        pi = np.exp(-miniEdf)/np.exp(-miniEdf).sum()
+        s = s.append(-(pi*np.log(pi)).sum(),
+                ignore_index=True)
+    s.to_csv(os.path.join(dirname,'s.csv'))
 
     print(Ecm.iloc[-1])
     print(np.mean(Ecm.iloc[-1]))
@@ -52,9 +66,15 @@ def create_dfs(dirname, sampT=300):
     Ecv.to_csv(os.path.join(dirname,'Ecv.csv'))
     acv.to_csv(os.path.join(dirname,'acv.csv'))
 
+    # CUMULATIVE VARIANCE OF VARIANCE ACROSS ALL CHAINS
+    
+
+    # CUMULATIVE beta ENERGY VARIANCE
+    bEcv = Edf.expanding(axis=0).var(skipna=True)
+
     #Ecv.plot()
     #plt.show()
-    return acm, Ecm, Ecv
+    return acm, Ecm, Ecv, DEcm, s
     return Edf, adf, phidict
     
 if __name__ == "__main__":

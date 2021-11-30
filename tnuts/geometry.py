@@ -6,7 +6,8 @@ import subprocess
 import time
 from ape.common import get_electronic_energy as get_e_elect
 from ape.InternalCoordinates import getXYZ
-
+from rmgpy.statmech import Conformer
+import rmgpy.constants as constants
 from tnuts.common import evolve_dihedral_by, get_energy_gradient, log_trajectory
 from tnuts.mode import dicts_to_NModes
 
@@ -24,6 +25,8 @@ class Geometry:
         self.internal = internal
         self.geom = self.internal.cart_coords
 
+        self.conformer = copy.deepcopy(samp_obj.conformer)
+
         # Current configuration
         self.xcur = np.zeros(self.n_rotors)
 
@@ -32,6 +35,10 @@ class Geometry:
 
         # Number of dihedrals and reference (equilibrium) dihedrals
         self.scans = [np.array(samp_obj.rotors_dict[n+1]['scan'])\
+                for n in range(self.n_rotors)]
+        self.pivots = [np.array(samp_obj.rotors_dict[n+1]['pivots'])\
+                for n in range(self.n_rotors)]
+        self.tops = [np.array(samp_obj.rotors_dict[n+1]['top'])\
                 for n in range(self.n_rotors)]
         scan_indices = internal.B_indices[-self.n_rotors:]
         self.dihedrals0 = np.array([self.internal.calc_dihedral(self.internal0.c3d, self.scans[i]-1) for i in range(self.n_rotors)])
@@ -237,6 +244,17 @@ class Geometry:
         else:
             return grad
 
+    def calc_I(self, phi):
+        xyz = self.transform_geometry_to(phi)
+        coordinates = self.internal.c3d
+        self.conformer.coordinates = (coordinates, "angstroms")
+        I = []
+        for i in range(self.n_rotors):
+            I.append(
+                    self.conformer.get_internal_reduced_moment_of_inertia(
+                        self.pivots[i], self.tops[i])*constants.Na * 1e23) # amu*Å^2
+        return np.array(I)
+
 if __name__ == '__main__':
     directory = '/Users/lancebettinson/Documents/entropy/um-vt/MeOOH'
     freq_file = os.path.join(directory,'MeOOH.out')
@@ -245,43 +263,16 @@ if __name__ == '__main__':
     samp_obj = SamplingJob(label,freq_file,output_directory=directory,
             protocol='TNUTS')
     samp_obj.parse()
+    samp_obj.csv_path = os.path.join(directory,
+            'MeOOH_sampling_result.csv')
     xyz_dict, energy_dict, mode_dict = samp_obj.sampling()
-    modes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
-                samp_obj=samp_obj)
-    syms = np.array([mode.get_symmetry_number() for mode in modes])
+    tmodes = dicts_to_NModes(mode_dict, energy_dict, xyz_dict,
+                samp_obj=samp_obj, just_tors=True)
+    syms = np.array([mode.get_symmetry_number() for mode in tmodes])
     geom = Geometry(samp_obj, samp_obj.torsion_internal, syms)
     
-    x = 0./syms
-    xyz = geom.get_geometry_at( 0*np.pi/syms )
-    grad = geom.get_energy_grad_at( geom.xcur )
-    toc1 = time.perf_counter()
-    print(geom.xcur)
-    
-    tic2 = time.perf_counter()
-    xyz1 = geom.get_geometry_at( np.pi/syms )
-    grad = geom.get_energy_grad_at( geom.xcur, which="grad" )
-    toc2 = time.perf_counter()
-    print(geom.xcur)
-    
-    tic3 = time.perf_counter()
-    xyz2 = geom.get_geometry_at( np.pi/syms+0.01 )
-    grad = geom.get_energy_grad_at( geom.xcur, which="grad" )
-    toc3 = time.perf_counter()
-
-    tic4 = time.perf_counter()
-    grad = geom.get_energy_grad_at( 0*np.pi/syms, which="grad" )
-    toc4 = time.perf_counter()
-    print(geom.xcur)
-    print(xyz2+'\n')
-    print(xyz1+'\n')
-    print(xyz+'\n')
-    print(f"Geometry 0 calculation: {toc1 - tic1:0.4f} seconds")
-    print(f"Maximally perturbed: {toc2 - tic2:0.4f} seconds")
-    print(f"Small pertubation from max: {toc3 - tic3:0.4f} seconds")
-    print(f"Reading from dictionary: {toc4 - tic4:0.4f} seconds")
-    print(f"QChem runtime: {geom.qchem_runtime:0.4f} seconds")
-    print(f"Coord runtime: {geom.coord_runtime:0.4f} seconds")
-
-    #print(geom.signs)
-    #print(geom.dict)
-
+    x = np.random.random((10,2))
+    for xi in x:
+        print("coordinate transformation at",xi)
+        I = geom.calc_I(xi)
+        print(I)
