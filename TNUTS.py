@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Monte Carlo Simulations for Coupled Modes
+Monte Carlo Simulations for Coupled Torsional Modes
 """
 import argparse
 import os
